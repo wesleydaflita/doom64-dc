@@ -123,8 +123,6 @@ float f_ticon;
 float f_vblsinframe[MAXPLAYERS];
 float last_fps = 0.0;
 
-pvr_dr_state_t dr_state;
-
 unsigned vbls_index = 0;
 uint8_t wrapped = 0;
 uint64_t framecount = 0;
@@ -288,7 +286,7 @@ int MiniLoop(void (*start)(void), void (*stop)(int), int (*ticker)(void), void (
 
 		last_delta = (uint32_t)((uint64_t)(dend - dstart));
 
-		dstart = perf_cntr_timer_ns();
+		dstart = PSP_TimeMicroseconds() * 1000;
 
 		float last_vbls = (float)last_delta / (float)NS_PER_VBL;
 
@@ -386,9 +384,7 @@ int MiniLoop(void (*start)(void), void (*stop)(int), int (*ticker)(void), void (
 			if (exit != ga_nothing)
 				break;
 
-			pvr_scene_begin();
-			pvr_list_begin(PVR_LIST_OP_POLY);
-			pvr_dr_init(&dr_state);
+			PSP_GUBeginFrame(0xff000000);
 #if RANGECHECK
 			Z_CheckZone(mainzone);
 #endif
@@ -407,12 +403,11 @@ int MiniLoop(void (*start)(void), void (*stop)(int), int (*ticker)(void), void (
 			Z_CheckZone(mainzone);
 #endif
 
-			pvr_list_finish();
 #if RANGECHECK
 			Z_CheckZone(mainzone);
 #endif
 
-			pvr_scene_finish();
+			PSP_GUEndFrame();
 #if RANGECHECK
 			// this is the check that found a KOS bug
 			Z_CheckZone(mainzone);
@@ -427,7 +422,7 @@ int MiniLoop(void (*start)(void), void (*stop)(int), int (*ticker)(void), void (
 
 		framecount += 1;
 
-		dend = perf_cntr_timer_ns();
+		dend = PSP_TimeMicroseconds() * 1000;
 	}
 
 	if (stop) {

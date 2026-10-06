@@ -2,6 +2,38 @@
 #include "r_local.h"
 #include <math.h>
 
+#ifdef __PSP__
+void light_wall_hasbump(d64Poly_t *poly, unsigned lightmask)
+{
+	(void)poly;
+	(void)lightmask;
+}
+
+void light_wall_nobump(d64Poly_t *poly, unsigned lightmask)
+{
+	(void)poly;
+	(void)lightmask;
+}
+
+void light_plane_hasbump(d64Poly_t *poly, unsigned lightmask)
+{
+	(void)poly;
+	(void)lightmask;
+}
+
+void light_plane_nobump(d64Poly_t *poly, unsigned lightmask)
+{
+	(void)poly;
+	(void)lightmask;
+}
+
+void light_thing(d64Poly_t *poly, unsigned lightmask)
+{
+	(void)poly;
+	(void)lightmask;
+}
+#else
+
 // array of lights generated in r_phase1.c
 extern projectile_light_t __attribute__((aligned(32))) projectile_lights[NUM_DYNLIGHT];
 // packed bumpmap parameters
@@ -528,3 +560,4 @@ void light_plane_nobump(d64Poly_t *p, unsigned lightmask)
 			assign_lightcolor(&p->dVerts[i]);
 	}
 }
+#endif

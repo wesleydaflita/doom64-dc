@@ -1,18 +1,22 @@
 /* DoomDef.h */
 
+#ifdef __PSP__
+#include "psp/platform.h"
+#else
 #include <kos.h>
+#endif
 #include <stdint.h>
 #include <strings.h>
 #include <math.h>
 typedef int fixed_t;
 
 #include "i_main.h"
+#include "pad.h"
 
 #define FOG_VERTEX 0
 
 #define ALL_SPRITES_COUNT (575 + 310)
 
-// next power of 2 greater than / equal to v
 static inline uint32_t np2(uint32_t v)
 {
 	v--;
@@ -161,7 +165,9 @@ typedef struct {
 	float distance;
 } projectile_light_t;
 
-#ifdef DCLOCALDEV
+#if defined(__PSP__)
+#define STORAGE_PREFIX "ms0:/PSP/GAME/DOOM64"
+#elif defined(DCLOCALDEV)
 #define STORAGE_PREFIX "/pc"
 #else
 #define STORAGE_PREFIX "/cd"
@@ -186,9 +192,15 @@ extern unsigned char lightmax[256];
 
 // this was originally doing (((aaa)&1)<<15) to set the alpha bit
 // that isn't right especially not when I was setting palette entries for intensity textures
+#ifdef __PSP__
+#define get_color_argb1555(rrr, ggg, bbb, aaa)						\
+	((uint16_t)(((!!aaa) << 15) | (((bbb >> 3) & 0x1f) << 10) |	\
+		    (((ggg >> 3) & 0x1f) << 5) | ((rrr >> 3) & 0x1f)))
+#else
 #define get_color_argb1555(rrr, ggg, bbb, aaa)						\
 	((uint16_t)(((!!aaa) << 15) | (((rrr >> 3) & 0x1f) << 10) |	\
 		    (((ggg >> 3) & 0x1f) << 5) | ((bbb >> 3) & 0x1f)))
+#endif
 
 #define LOSTLEVEL 34
 #define KNEEDEEP 41
@@ -316,7 +328,8 @@ typedef struct {
 
 void draw_pvr_line(vector_t *v1, vector_t *v2, int color);
 
-#define transform_d64ListVert(d64v) mat_trans_single3_nodivw((d64v)->v->x, (d64v)->v->y, (d64v)->v->z, (d64v)->w)
+#define transform_d64ListVert(d64v) \
+	PSP_MatrixTransform(&(d64v)->v->x, &(d64v)->v->y, &(d64v)->v->z, &(d64v)->w)
 
 // only works for positive x
 #define approx_recip(x) (1.0f / sqrtf((x)*(x)))
@@ -326,7 +339,7 @@ void draw_pvr_line(vector_t *v1, vector_t *v2, int color);
 static inline void transform_vector(vector_t *d64v)
 {
 	/* no divide, for trivial rejection and near-z clipping */
-	mat_trans_single3_nodivw(d64v->x, d64v->y, d64v->z, d64v->w);
+	PSP_MatrixTransform(&d64v->x, &d64v->y, &d64v->z, &d64v->w);
 }
 
 static inline void perspdiv_vector(vector_t *v)
@@ -1576,44 +1589,13 @@ void I_WIPE_FadeOutScreen(void);
 #define PACKRGBA(r, g, b, a) (((r) << 24) | ((g) << 16) | ((b) << 8) | (a))
 
 /* CONTROL PAD */
-#define PAD_A 0x80000000
-#define PAD_DREAMCAST_X PAD_A
+	#define PAD_DREAMCAST_X PAD_A
+	#define PAD_DREAMCAST_Y PAD_B
+	#define PAD_DREAMCAST_A PAD_Z_TRIG
+	#define PAD_DREAMCAST_B PAD_RIGHT_C
+	#define startupfile "\x25""s\057w\x61""r\1563\x2E""d\164"
 
-#define PAD_B 0x40000000
-#define PAD_DREAMCAST_Y PAD_B
-
-#define PAD_Z_TRIG 0x20000000
-#define PAD_DREAMCAST_A PAD_Z_TRIG
-
-#define PAD_START 0x10000000
-
-#define PAD_UP 0x08000000
-#define PAD_DOWN 0x04000000
-#define PAD_LEFT 0x02000000
-#define PAD_RIGHT 0x01000000
-
-#define PAD_UP_C 0x00080000
-#define PAD_DOWN_C 0x00040000
-#define PAD_LEFT_C 0x00020000
-#define PAD_RIGHT_C 0x00010000
-#define PAD_DREAMCAST_B PAD_RIGHT_C
-
-#define PAD_L_TRIG 0x00200000
-#define PAD_R_TRIG 0x00100000
-
-#define ALL_JPAD (PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT)
-
-#define ALL_CBUTTONS (PAD_UP_C | PAD_DOWN_C | PAD_LEFT_C | PAD_RIGHT_C)
-
-#define ALL_BUTTONS													\
-	(PAD_L_TRIG | PAD_R_TRIG | PAD_UP_C | PAD_DOWN_C | PAD_LEFT_C |	\
-	PAD_RIGHT_C | PAD_A | PAD_B | PAD_Z_TRIG)
-
-#define ALL_TRIG (PAD_L_TRIG | PAD_R_TRIG | PAD_Z_TRIG)
-
-#define startupfile "\x25""s\057w\x61""r\1563\x2E""d\164"
-
-typedef struct {
+	typedef struct {
 	unsigned int BT_RIGHT;
 	unsigned int BT_LEFT;
 	unsigned int BT_FORWARD;

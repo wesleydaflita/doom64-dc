@@ -343,6 +343,7 @@ weaponinfo_t weaponinfo[NUMWEAPONS] = // 8005AD80
 ================
 */
 
+#ifndef __PSP__
 void P_StartElectricLoop(void)
 {
 	sfx_play_data_t data = {0};
@@ -361,6 +362,7 @@ void P_StopElectricLoop(void) {
 	snd_sfx_chn_free(plasma_loop_channel);
 	plasma_loop_channel = -1;
 }
+#endif
 
 void P_BringUpWeapon(player_t *player) // 8001B4BC
 {

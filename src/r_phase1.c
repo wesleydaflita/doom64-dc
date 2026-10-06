@@ -196,6 +196,14 @@ static void R_ResetProjectileLights(void)
 
 static void R_AddProjectileLight(fixed_t x, fixed_t y, fixed_t z, float rad, uint32_t lightc, int type)
 {
+#ifdef __PSP__
+	(void)x;
+	(void)y;
+	(void)z;
+	(void)rad;
+	(void)lightc;
+	(void)type;
+#else
 	player_t *p;
 	fixed_t dx;
 	fixed_t dy;
@@ -265,6 +273,7 @@ static void R_AddProjectileLight(fixed_t x, fixed_t y, fixed_t z, float rad, uin
 			}
 		}
 	}
+#endif
 }
 
 extern int player_shooting;

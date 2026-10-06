@@ -2,7 +2,6 @@
 #include "doomdef.h"
 #include "r_local.h"
 
-#include <dc/matrix.h>
 
 /*===========================================================================*/
 
@@ -82,13 +81,13 @@ void R_Init(void)
 
 	R_Viewport(R_ViewportMatrix, 0, 0, 640, 480);
 
-	pvr_poly_cxt_col(&flash_cxt, PVR_LIST_TR_POLY);
+	PSP_GUFlatContext(&flash_cxt, PVR_LIST_TR_POLY);
 	flash_cxt.blend.src = PVR_BLEND_ONE;
 	flash_cxt.blend.dst = PVR_BLEND_ONE;
-	pvr_poly_compile(&flash_hdr, &flash_cxt);
+	PSP_GUCompileTextureHeader(&flash_hdr, &flash_cxt);
 
-	pvr_poly_cxt_col(&overlay_cxt, PVR_LIST_TR_POLY);
-	pvr_poly_compile(&overlay_hdr, &overlay_cxt);
+	PSP_GUFlatContext(&overlay_cxt, PVR_LIST_TR_POLY);
+	PSP_GUCompileTextureHeader(&overlay_hdr, &overlay_cxt);
 }
 
 /*
@@ -161,7 +160,7 @@ void R_RenderPlayerView(void)
 	R_BSP();
 
 	// Phase 2
-	if (rendersky)
+	if (rendersky && R_RenderSKY)
 		R_RenderSKY();
 
 //#define PVR_MIN_Z 0.0001f
@@ -172,9 +171,6 @@ void R_RenderPlayerView(void)
 	float d64_fog_end   = 8 + scale * exp_map_0_1000_f(1000);
 #if FOG_VERTEX
 	vertfog_color(1.0f, (float)UNPACK_R(FogColor) / 255.0f, (float)UNPACK_G(FogColor) / 255.0f, (float)UNPACK_B(FogColor) / 255.0f);
-#else
-	pvr_fog_table_color(1.0f, (float)UNPACK_R(FogColor) / 255.0f, (float)UNPACK_G(FogColor) / 255.0f, (float)UNPACK_B(FogColor) / 255.0f);
-	pvr_fog_table_linear(d64_fog_start * 0.5f, d64_fog_end * 0.5f);
 #endif
 
 	R_RotateX(R_RotX, (float)finesine[pitch] * recip64k, (float)finecosine[pitch] * recip64k);
@@ -204,8 +200,7 @@ void R_RenderPlayerView(void)
 		for (int fvi=0;fvi<4;fvi++)
 			flash_verts[fvi].argb = color;
 
-		pvr_list_prim(PVR_LIST_TR_POLY, &flash_hdr, sizeof(pvr_poly_hdr_t));
-		pvr_list_prim(PVR_LIST_TR_POLY, &flash_verts, sizeof(flash_verts));
+		PSP_GUDrawFlat(flash_verts, 4);
 	}
 }
 

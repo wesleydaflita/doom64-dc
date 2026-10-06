@@ -3,6 +3,7 @@
 #include "p_local.h"
 #include "st_main.h"
 #include "r_local.h"
+#include <malloc.h>
 
 #define T_NULL ""
 
@@ -406,10 +407,6 @@ void F_DrawerIntermission(void) // 80002F14
 	I_ClearFrame();
 
 	// Fill borders with black
-	pvr_set_bg_color(0, 0, 0);
-	pvr_fog_table_color(0.0f, 0.0f, 0.0f, 0.0f);
-	pvr_fog_table_custom(empty_table);
-
 	M_DrawBackground(EVIL, 128);
 
 	ypos = textypos;
@@ -772,7 +769,7 @@ void F_Drawer(void) // 800039DC
 
 extern float *all_u;
 extern float *all_v;
-extern pvr_poly_hdr_t  pvr_sprite_hdr_nofilter;
+extern pvr_ptr_t pvr_non_enemy;
 
 extern pvr_ptr_t pvr_spritecache[MAX_CACHED_SPRITES];
 extern pvr_poly_hdr_t  hdr_spritecache[MAX_CACHED_SPRITES];
@@ -945,8 +942,6 @@ static pvr_vertex_t  bds_verts[4] =  {
 	{PVR_CMD_VERTEX_EOL, 0, 0, 5, 0, 0, 0x00000000, 0xff000000},
 };
 
-static pvr_poly_cxt_t bds_cxt_spritecache;
-
 void BufferedDrawSprite(int type, state_t *state, int rotframe, int color, int xpos, int ypos)
 {
 	float xl;
@@ -985,7 +980,10 @@ void BufferedDrawSprite(int type, state_t *state, int rotframe, int color, int x
 	xoffs = (((spriteDC_t *)data)->xoffs);
 	yoffs = (((spriteDC_t *)data)->yoffs);
 
-	pvr_poly_hdr_t *theheader;
+	pvr_ptr_t texture;
+	int texture_width;
+	int texture_height;
+	int palette;
 
 	if ((lump <= 348) || ((lump >= 924) && (lump <= 965))) {
 		// pull in each side of sprite by half pixel
@@ -1000,7 +998,10 @@ void BufferedDrawSprite(int type, state_t *state, int rotframe, int color, int x
 		v0 = all_v[lump] + (0.5f / 1024.0f);
 		v1 = all_v[lump] + (((float)height - 0.5f) / 1024.0f);
 
-		theheader = &pvr_sprite_hdr_nofilter;
+		texture = pvr_non_enemy;
+		texture_width = 1024;
+		texture_height = 1024;
+		palette = PAL_ITEM;
 	} else {
 		float recipwp2, reciphp2;
 		wp2 = np2(width);
@@ -1051,7 +1052,7 @@ void BufferedDrawSprite(int type, state_t *state, int rotframe, int color, int x
 				int num_mlump = get_num_monster_lumps(cached_yet);
 				for (int i = 0; i < num_mlump; i++) {
 					if (pvr_spritecache[i]) {
-						pvr_mem_free(pvr_spritecache[i]);
+						free(pvr_spritecache[i]);
 						pvr_spritecache[i] = 0;
 					}
 				}
@@ -1076,19 +1077,20 @@ void BufferedDrawSprite(int type, state_t *state, int rotframe, int color, int x
 
 				msrc = mdata + sizeof(spriteDC_t);
 
-				pvr_spritecache[nm] = pvr_mem_malloc(mwp2 * mhp2);
-#if RANGECHECK
+				pvr_spritecache[nm] = memalign(16, mwp2 * mhp2);
 				if (!pvr_spritecache[nm])
 					I_Error("PVR OOM for sprite cache");
-#endif
-				pvr_poly_cxt_txr(&bds_cxt_spritecache, PVR_LIST_TR_POLY,
-					D64_TPAL(PAL_ENEMY), mwp2, mhp2, pvr_spritecache[nm], PVR_FILTER_NONE);
-				pvr_poly_compile(&hdr_spritecache[nm], &bds_cxt_spritecache);
-				pvr_txr_load(msrc, pvr_spritecache[nm], mwp2 * mhp2);
+				if (PSP_GUUntwiddle8(msrc, pvr_spritecache[nm],
+						mwp2, mhp2))
+					I_Error("Could not untwiddle finale sprite lump %d",
+						start_mlump + nm);
 			}
 		}
 
-		theheader = &hdr_spritecache[monster_lump - start_mlump];
+		texture = pvr_spritecache[monster_lump - start_mlump];
+		texture_width = wp2;
+		texture_height = hp2;
+		palette = PAL_ENEMY;
 
 		// some of the monsters have "the crud"
 		// pull them in by half pixel on each edge
@@ -1137,8 +1139,8 @@ void BufferedDrawSprite(int type, state_t *state, int rotframe, int color, int x
 	vert->u = u1;
 	vert->v = v0;
 
-	pvr_list_prim(PVR_LIST_TR_POLY, theheader, sizeof(pvr_poly_hdr_t));
-	pvr_list_prim(PVR_LIST_TR_POLY, &bds_verts, sizeof(bds_verts));
+	PSP_GUDrawIndexed(texture, texture_width, texture_height, palette,
+		bds_verts, 4);
 
 	globallump = -1;
 }
@@ -1161,7 +1163,7 @@ void F_Stop(int exit)
 	int num_mlump = get_num_monster_lumps(cached_yet);
 	for (int i = 0; i < num_mlump; i++) {
 		if (pvr_spritecache[i]) {
-			pvr_mem_free(pvr_spritecache[i]);
+			free(pvr_spritecache[i]);
 			pvr_spritecache[i] = 0;
 		}
 	}

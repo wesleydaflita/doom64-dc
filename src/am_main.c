@@ -3,8 +3,8 @@
 #include "doomdef.h"
 #include "p_local.h"
 #include "st_main.h"
-#include <dc/vector.h>
 
+#include <stdio.h>
 #define COLOR_RED 0xA40000FF
 #define COLOR_GREEN 0x00C000FF
 #define COLOR_BROWN 0x8A5C30ff
@@ -237,10 +237,6 @@ void AM_Drawer(void)
 	int artflag;
 	fixed_t boxscale;
 
-	pvr_set_bg_color(0, 0, 0);
-	pvr_fog_table_color(0.0f, 0.0f, 0.0f, 0.0f);
-	pvr_fog_table_custom(empty_table);
-
 	p = &players[0];
 
 	scale = (p->automapscale << FRACBITS);
@@ -307,8 +303,6 @@ void AM_Drawer(void)
 	}
 
 	if (p->automapflags & AF_LINES) {
-		// lines are all the same, submit header once
-		sq_fast_cpy(SQ_MASK_DEST(PVR_TA_INPUT), &line_hdr, 1);
 		AM_DrawLine(p, amscreen_box);
 	} else {
 		AM_DrawSubsectors(p, xpos, ypos, amscreen_box);
@@ -500,7 +494,6 @@ void AM_DrawSubsectors(player_t *player, fixed_t cx, fixed_t cy, fixed_t bbox[st
 */
 
 void draw_pvr_line_hdr(vector_t *v1, vector_t *v2, int color) {
-	sq_fast_cpy(SQ_MASK_DEST(PVR_TA_INPUT), &line_hdr, 1);
 	draw_pvr_line(v1, v2, color);
 }
 
@@ -556,7 +549,7 @@ void draw_pvr_line(vector_t *v1, vector_t *v2, int color)
 	vert->z = ov2->z;
 	vert->argb = color;
 
-	sq_fast_cpy(SQ_MASK_DEST(PVR_TA_INPUT), pvrlineverts, 4);
+	PSP_GUDrawFlat(pvrlineverts, 4);
 }
 
 void AM_DrawLineThings(fixed_t x, fixed_t y, angle_t angle, uint32_t color)
@@ -714,6 +707,5 @@ void AM_DrawThings(fixed_t x, fixed_t y, angle_t angle, uint32_t color)
 	vert->z = v3.z + thing_height;
 	vert->argb = repacked_color;
 
-	sq_fast_cpy(SQ_MASK_DEST(PVR_TA_INPUT), &thing_hdr, 1);
-	sq_fast_cpy(SQ_MASK_DEST(PVR_TA_INPUT), thing_verts, 3);
+	PSP_GUDrawFlat(thing_verts, 3);
 }

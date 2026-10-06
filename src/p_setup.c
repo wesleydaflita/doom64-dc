@@ -525,9 +525,11 @@ void P_LoadLeafs(void) // 8001DFF8
 		if (gamemap > 33)
 			need_split = 0;
 
+#ifndef __PSP__
 		if (backres[4] != 0x69) {
 			I_Error("vertex out of range");
 		}
+#endif
 
 		if (gamemap < 34)
 			split_verts[i] = NULL;

@@ -4,6 +4,7 @@
 #include "doomdef.h"
 #include "st_main.h"
 #include "r_local.h"
+#include <stdio.h>
 
 extern int nextmap;
 
@@ -165,14 +166,6 @@ void IN_Stop(int exit) // 80004DB0
 	else
 		last_level = ABS_LASTLEVEL;
 
-	if ((nextmap >= 2) && (nextmap < last_level) && !FUNLEVEL(gamemap)) {
-		if (UseVMU) {
-			in_menu = 1;
-			MiniLoop(M_SavePakStart, M_SavePakStop, M_SavePakTicker, M_SavePakDrawer);
-			in_menu = 0;
-		}
-	}
-
 	I_WIPE_FadeOutScreen();
 }
 
@@ -270,9 +263,11 @@ int IN_Ticker(void) // 80004E24
 		last_f_gametic = (int)f_gametic;
 	}
 
+#ifndef __PSP__
 	if (backres[13] != 0xad) {
 		I_Error("PVR OOM for SYMBOLS lump texture");
 	}
+#endif
 
 	return ga_nothing;
 }
@@ -286,10 +281,6 @@ void IN_Drawer(void) // 80005164
 	I_ClearFrame();
 
 	// Fill borders with black
-	pvr_set_bg_color(0, 0, 0);
-	pvr_fog_table_color(0.0f, 0.0f, 0.0f, 0.0f);
-	pvr_fog_table_custom(empty_table);
-
 	M_DrawBackground(EVIL, 128);
 
 	ST_DrawString(-1, 20, MapInfo[gamemap].name, PACKRGBA(255, 255, 255, text_alpha), ST_BELOW_OVL);
@@ -353,4 +344,3 @@ void IN_Drawer(void) // 80005164
 
 	I_DrawFrame();
 }
-

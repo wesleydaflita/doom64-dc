@@ -270,7 +270,6 @@ void ST_InitEveryLevel(void) // 80029C00
 =
 ====================
 */
-extern int force_vmu_refresh;
 void ST_Ticker(void) // 80029C88
 {
 	player_t *player;
@@ -315,17 +314,6 @@ void ST_Ticker(void) // 80029C88
 		ST_UpdateFlash();
 	}
 
-	if (demoplayback == false && (force_vmu_refresh || menu_settings.VmuDisplay)) {
-		st_randomnumber = I_Random();
-
-		ST_updateFaceWidget();
-
-		// Update VMU
-		I_VMUFB(force_vmu_refresh);
-
-		if (force_vmu_refresh)
-			force_vmu_refresh = 0;
-	}
 }
 
 /*
@@ -338,7 +326,21 @@ void ST_Ticker(void) // 80029C88
 
 pvr_sprite_hdr_t status_shdr;
 pvr_sprite_cxt_t status_scxt;
-pvr_sprite_txr_t status_stxr;
+extern pvr_ptr_t pvrstatus;
+
+static void ST_DrawTexturedQuad(pvr_ptr_t texture, int texture_width,
+	int texture_height, float x1, float y1, float x2, float y2,
+	float u1, float v1, float u2, float v2, float z, uint32_t color)
+{
+	pvr_vertex_t vertices[4] = {
+		{PVR_CMD_VERTEX, x1, y2, z, color, 0, u1, v2},
+		{PVR_CMD_VERTEX, x1, y1, z, color, 0, u1, v1},
+		{PVR_CMD_VERTEX, x2, y1, z, color, 0, u2, v1},
+		{PVR_CMD_VERTEX_EOL, x2, y2, z, color, 0, u2, v2}
+	};
+
+	PSP_GUDraw5551(texture, texture_width, texture_height, vertices, 4);
+}
 
 void ST_Drawer(void) // 80029DC0
 {
@@ -347,12 +349,6 @@ void ST_Drawer(void) // 80029DC0
 	int ammo, ind, ms_alpha;
 
 	float x1, x2, y1, y2, u1, u2, v1, v2;
-
-	status_stxr.flags = PVR_CMD_VERTEX_EOL;
-	status_stxr.az = 8.9999999f;
-	status_stxr.bz = 8.9999999f;
-	status_stxr.cz = 8.9999999f;
-	status_stxr.dummy = 0;
 
 	player = &players[0];
 
@@ -431,25 +427,9 @@ void ST_Drawer(void) // 80029DC0
 			v1 = (float)0.0f;
 			v2 = (float)hh / 16.0f;
 
-			status_shdr.argb = D64_PVR_PACK_COLOR(
-					0x80, 0x80, 0x80,
-					menu_settings.HUDopacity);
-			status_stxr.ax = x1;
-			status_stxr.ay = y2;
-			status_stxr.bx = x1;
-			status_stxr.by = y1;
-			status_stxr.cx = x2;
-			status_stxr.cy = y1;
-			status_stxr.dx = x2;
-			status_stxr.dy = y2;
-			status_stxr.auv = PVR_PACK_16BIT_UV(u1, v2);
-			status_stxr.buv = PVR_PACK_16BIT_UV(u1, v1);
-			status_stxr.cuv = PVR_PACK_16BIT_UV(u2, v1);
-
-			pvr_list_prim(PVR_LIST_TR_POLY, &status_shdr,
-						sizeof(pvr_sprite_hdr_t));
-			pvr_list_prim(PVR_LIST_TR_POLY, &status_stxr,
-						sizeof(pvr_sprite_txr_t));
+			ST_DrawTexturedQuad(pvrstatus, 128, 16, x1, y1, x2, y2,
+				u1, v1, u2, v2, 8.9999999f,
+				D64_PVR_PACK_COLOR(0x80, 0x80, 0x80, menu_settings.HUDopacity));
 		}
 		/* */
 		/* Armor */
@@ -468,20 +448,9 @@ void ST_Drawer(void) // 80029DC0
 			v1 = 0.0f;
 			v2 = (float)hh / 16.0f;
 
-			status_stxr.ax = x1;
-			status_stxr.ay = y2;
-			status_stxr.bx = x1;
-			status_stxr.by = y1;
-			status_stxr.cx = x2;
-			status_stxr.cy = y1;
-			status_stxr.dx = x2;
-			status_stxr.dy = y2;
-			status_stxr.auv = PVR_PACK_16BIT_UV(u1, v2);
-			status_stxr.buv = PVR_PACK_16BIT_UV(u1, v1);
-			status_stxr.cuv = PVR_PACK_16BIT_UV(u2, v1);
-
-			pvr_list_prim(PVR_LIST_TR_POLY, &status_stxr,
-						sizeof(pvr_sprite_txr_t));
+			ST_DrawTexturedQuad(pvrstatus, 128, 16, x1, y1, x2, y2,
+				u1, v1, u2, v2, 8.9999999f,
+				D64_PVR_PACK_COLOR(255, 255, 255, menu_settings.HUDopacity));
 		}
 		/* */
 		/* White color */
@@ -508,25 +477,9 @@ void ST_Drawer(void) // 80029DC0
 				v1 = 6.0f / 16.0f;
 				v2 = (6.0f + (float)hh) / 16.0f;
 
-				status_shdr.argb = D64_PVR_PACK_COLOR(
-						0xff, 0xff, 0xff,
-						menu_settings.HUDopacity);
-				status_stxr.ax = x1;
-				status_stxr.ay = y2;
-				status_stxr.bx = x1;
-				status_stxr.by = y1;
-				status_stxr.cx = x2;
-				status_stxr.cy = y1;
-				status_stxr.dx = x2;
-				status_stxr.dy = y2;
-				status_stxr.auv = PVR_PACK_16BIT_UV(u1, v2);
-				status_stxr.buv = PVR_PACK_16BIT_UV(u1, v1);
-				status_stxr.cuv = PVR_PACK_16BIT_UV(u2, v1);
-
-				pvr_list_prim(PVR_LIST_TR_POLY, &status_shdr,
-							sizeof(pvr_sprite_hdr_t));
-				pvr_list_prim(PVR_LIST_TR_POLY, &status_stxr,
-							sizeof(pvr_sprite_txr_t));
+				ST_DrawTexturedQuad(pvrstatus, 128, 16, x1, y1, x2, y2,
+					u1, v1, u2, v2, 8.9999999f,
+					D64_PVR_PACK_COLOR(255, 255, 255, menu_settings.HUDopacity));
 			}
 		}
 
@@ -604,7 +557,6 @@ pvr_ptr_t pvrfont;
 
 pvr_sprite_hdr_t font_shdr;
 pvr_sprite_cxt_t font_scxt;
-pvr_sprite_txr_t font_stxr;
 
 void ST_Message(int x, int y, char *text, uint32_t color, int prio)
 {
@@ -618,23 +570,8 @@ void ST_Message(int x, int y, char *text, uint32_t color, int prio)
 		return;
 	}
 
-	font_stxr.flags = PVR_CMD_VERTEX_EOL;
-	if (prio == ST_ABOVE_OVL) {
-		font_stxr.az = 10.0000001f;
-		font_stxr.bz = 10.0000001f;
-		font_stxr.cz = 10.0000001f;
-	} else {
-		font_stxr.az = 8.9999999f;
-		font_stxr.bz = 8.9999999f;
-		font_stxr.cz = 8.9999999f;
-	}
-	font_stxr.dummy = 0;
-	font_shdr.argb = D64_PVR_REPACK_COLOR(color);
-
 	ypos = y;
 	xpos = x;
-
-	pvr_list_prim(PVR_LIST_TR_POLY, &font_shdr, sizeof(pvr_sprite_hdr_t));
 
 	while (*text) {
 		c = *text;
@@ -663,18 +600,10 @@ void ST_Message(int x, int y, char *text, uint32_t color, int prio)
 				v1 = (float)t / 16.0f;
 				v2 = (float)(t + ST_FONTWHSIZE) / 16.0f;
 
-				font_stxr.ax = x1;
-				font_stxr.ay = y2;
-				font_stxr.bx = x1;
-				font_stxr.by = y1;
-				font_stxr.cx = x2;
-				font_stxr.cy = y1;
-				font_stxr.dx = x2;
-				font_stxr.dy = y2;
-				font_stxr.auv = PVR_PACK_16BIT_UV(u1, v2);
-				font_stxr.buv = PVR_PACK_16BIT_UV(u1, v1);
-				font_stxr.cuv = PVR_PACK_16BIT_UV(u2, v1);
-				pvr_list_prim(PVR_LIST_TR_POLY, &font_stxr, sizeof(pvr_sprite_txr_t));
+				ST_DrawTexturedQuad(pvrfont, 256, 16, x1, y1, x2, y2,
+					u1, v1, u2, v2,
+					prio == ST_ABOVE_OVL ? 10.0000001f : 8.9999999f,
+					D64_PVR_REPACK_COLOR(color));
 			}
 			xpos += ST_FONTWHSIZE;
 		}
@@ -912,7 +841,6 @@ pvr_ptr_t pvr_symbols;
 
 pvr_sprite_hdr_t symbols_shdr;
 pvr_sprite_cxt_t symbols_scxt;
-pvr_sprite_txr_t symbols_stxr;
 
 void ST_DrawSymbol(int xpos, int ypos, int index, uint32_t color, int prio)
 {
@@ -944,37 +872,15 @@ void ST_DrawSymbol(int xpos, int ypos, int index, uint32_t color, int prio)
 	u2 = (float)((float)symbol->x + (float)symbol->w) * recip_symw;
 	v2 = (float)((float)symbol->y + (float)symbol->h) * recip_symh;
 
-	symbols_stxr.flags = PVR_CMD_VERTEX_EOL;
-	if (prio == ST_ABOVE_OVL) {
-		symbols_stxr.az = 10.0000001f;
-		symbols_stxr.bz = 10.0000001f;
-		symbols_stxr.cz = 10.0000001f;
-	} else {
-		symbols_stxr.az = 8.9999999f;
-		symbols_stxr.bz = 8.9999999f;
-		symbols_stxr.cz = 8.9999999f;
-	}
-	symbols_stxr.dummy = 0;
-	symbols_shdr.argb = D64_PVR_REPACK_COLOR(color);
-
 	x1 *= (float)RES_RATIO;
 	x2 *= (float)RES_RATIO;
 	y1 *= (float)RES_RATIO;
 	y2 *= (float)RES_RATIO;
 
-	symbols_stxr.ax = x1;
-	symbols_stxr.ay = y2;
-	symbols_stxr.bx = x1;
-	symbols_stxr.by = y1;
-	symbols_stxr.cx = x2;
-	symbols_stxr.cy = y1;
-	symbols_stxr.dx = x2;
-	symbols_stxr.dy = y2;
-	symbols_stxr.auv = PVR_PACK_16BIT_UV(u1, v2);
-	symbols_stxr.buv = PVR_PACK_16BIT_UV(u1, v1);
-	symbols_stxr.cuv = PVR_PACK_16BIT_UV(u2, v1);
-	pvr_list_prim(PVR_LIST_TR_POLY, &symbols_shdr, sizeof(pvr_sprite_hdr_t));
-	pvr_list_prim(PVR_LIST_TR_POLY, &symbols_stxr, sizeof(pvr_sprite_txr_t));
+	ST_DrawTexturedQuad(pvr_symbols, np2(rawsymbol_w), np2(rawsymbol_h),
+		x1, y1, x2, y2, u1, v1, u2, v2,
+		prio == ST_ABOVE_OVL ? 10.0000001f : 8.9999999f,
+		D64_PVR_REPACK_COLOR(color));
 }
 
 int ST_calcPainOffset(void)
@@ -995,6 +901,7 @@ int ST_calcPainOffset(void)
 	return lastcalc;
 }
 
+#ifndef __PSP__
 void ST_drawVMUFace(void)
 {
 	I_VMUUpdateFace(faces[st_faceindex], force_vmu_refresh);
@@ -1185,3 +1092,4 @@ void ST_updateFaceWidget(void)
 
 	st_facecount--;
 }
+#endif

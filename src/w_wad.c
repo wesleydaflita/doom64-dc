@@ -8,6 +8,8 @@
 #include "hash.h"
 
 #include <errno.h>
+#include <malloc.h>
+#include <stdlib.h>
 
 /*=============== */
 /*   TYPES */
@@ -205,6 +207,11 @@ static unsigned long int hash(void *element, void *params)
 // this does not get used after W_Init/S_Init return
 void W_DrawLoadScreen(char *what, int current, int total)
 {
+#ifdef __PSP__
+	(void)what;
+	(void)current;
+	(void)total;
+#else
 	uint32_t color2 = 0xff323232;
 	uint32_t color = 0xff525252;
 	uint32_t color4 = 0xffa00000;
@@ -331,6 +338,7 @@ void W_DrawLoadScreen(char *what, int current, int total)
 
 	pvr_list_finish();
 	pvr_scene_finish();
+#endif
 }
 
 /*
@@ -341,6 +349,9 @@ void W_DrawLoadScreen(char *what, int current, int total)
 ====================
 */
 
+#ifdef __PSP__
+static void W_LoadWepnBumps(void) {}
+#else
 static void W_LoadWepnBumps(void) {
 	ssize_t vqsize;
 
@@ -467,11 +478,18 @@ static void W_LoadWepnBumps(void) {
 	memcpy(all_comp_wepn_bumps[9], pwepnbump, vqsize);
 	free(pwepnbump);
 }
+#endif
 
 extern void P_FlushSprites(void);
 extern void P_FlushAllCached(void);
 static pvr_poly_cxt_t wepnbump_cxt;
 
+#ifdef __PSP__
+void W_ReplaceWeaponBumps(weapontype_t wepn)
+{
+	(void)wepn;
+}
+#else
 void W_ReplaceWeaponBumps(weapontype_t wepn)
 {
 	int w,h;
@@ -568,6 +586,7 @@ void W_ReplaceWeaponBumps(weapontype_t wepn)
 
 	pvr_poly_compile(&wepnbump_hdr, &wepnbump_cxt);
 }
+#endif
 
 /*
 ====================
@@ -595,24 +614,22 @@ void W_Init(void)
 
 	extra_episodes = -6;
 
-	pvr_set_pal_format(PVR_PAL_ARGB1555);
-
 	// color 0 is always transparent (replacing RGB ff 00 ff)
-	pvr_set_pal_entry(0, 0);
+	PSP_GUSetPaletteEntry(0, 0);
 	for (int i = 1; i < 256; i++)
-		pvr_set_pal_entry(i, get_color_argb1555(D64MONSTER[i][0], D64MONSTER[i][1], D64MONSTER[i][2],1));
+		PSP_GUSetPaletteEntry(i, get_color_argb1555(D64MONSTER[i][0], D64MONSTER[i][1], D64MONSTER[i][2],1));
 
-	pvr_set_pal_entry(256, 0);
+	PSP_GUSetPaletteEntry(256, 0);
 	for (int i = 1; i < 256; i++)
-		pvr_set_pal_entry(256 + i, get_color_argb1555(D64NONENEMY[i][0], D64NONENEMY[i][1], D64NONENEMY[i][2],1));
+		PSP_GUSetPaletteEntry(256 + i, get_color_argb1555(D64NONENEMY[i][0], D64NONENEMY[i][1], D64NONENEMY[i][2],1));
 
-	pvr_set_pal_entry(512, 0);
+	PSP_GUSetPaletteEntry(512, 0);
 	for (int i = 1; i < 256; i++)
-		pvr_set_pal_entry(512 + i, get_color_argb1555(PALTEXCONV[i][0], PALTEXCONV[i][1], PALTEXCONV[i][2],1));
+		PSP_GUSetPaletteEntry(512 + i, get_color_argb1555(PALTEXCONV[i][0], PALTEXCONV[i][1], PALTEXCONV[i][2],1));
 
-	pvr_set_pal_entry(768, 0);
+	PSP_GUSetPaletteEntry(768, 0);
 	for (int i = 1; i < 256; i++)
-		pvr_set_pal_entry(768 + i, get_color_argb1555(i,i,i,1));
+		PSP_GUSetPaletteEntry(768 + i, get_color_argb1555(i,i,i,1));
 
 	R_InitSymbols();
 
@@ -669,6 +686,7 @@ kneedeep_check:
 	if (chunk)
 		free(chunk);
 
+#ifndef __PSP__
 	pvr_ptr_t back_tex = 0;
 	back_tex = pvr_mem_malloc(512 * 512 * 2);
 	if (!back_tex)
@@ -747,7 +765,9 @@ kneedeep_check:
 		pvr_mem_free(back_tex);
 	if (backbuf)
 		free(backbuf);
+#endif
 
+	#ifndef __PSP__
 	// get optional custom controller mapping from disk
 	char *mapping_file;
 	sprintf(fnbuf, "%s/controls.ini", fnpre);
@@ -762,6 +782,7 @@ kneedeep_check:
 		// just be sure to free it here
 		free(mapping_file);
 	}
+#endif
 
 	// weapon bumpmaps
 	W_DrawLoadScreen("weapon bumpmaps", 50, 100);
@@ -775,17 +796,36 @@ kneedeep_check:
 	if (-1 == loadsize)
 		I_Error("Could not load %s", fnbuf);
 
+#ifdef __PSP__
+	if (loadsize != 1024 * 1024)
+		I_Error("Invalid non-enemy texture size %d", loadsize);
+
+	uint8_t *untwiddled = malloc((size_t)loadsize);
+	uint8_t *reduced = malloc(512 * 512);
+	if (!untwiddled || !reduced)
+		I_Error("PSP OOM preparing non-enemy texture");
+	if (PSP_GUUntwiddle8(pnon_enemy, untwiddled, 1024, 1024))
+		I_Error("Could not untwiddle non-enemy texture");
+
+	for (int y = 0; y < 512; y++)
+		for (int x = 0; x < 512; x++)
+			reduced[y * 512 + x] = untwiddled[(y * 2) * 1024 + x * 2];
+
+	free(pnon_enemy);
+	free(untwiddled);
+	pnon_enemy = reduced;
+	loadsize = 512 * 512;
+#endif
+
 	W_DrawLoadScreen("non-enemy sprites", 50, 100);
 	dbgio_printf("non_enemy loaded size is %d\n", loadsize);
-	pvr_non_enemy = pvr_mem_malloc(loadsize);
+	pvr_non_enemy = PSP_GUAllocTexture(loadsize);
 	if (!pvr_non_enemy)
-		I_Error("PVR OOM for non-enemy texture");
-	pvr_txr_load(pnon_enemy, pvr_non_enemy, loadsize);
+		I_Error("PSP OOM for non-enemy texture");
+	PSP_GULoadTexture(pnon_enemy, pvr_non_enemy, loadsize);
 	free(pnon_enemy);
 
 	W_DrawLoadScreen("non-enemy sprites", 100, 100);
-
-	dbgio_printf("PVR mem free after non_enemy: %u\n", pvr_mem_available());
 
 	// doom64 wad
 	dbgio_printf("W_Init: Loading IWAD into RAM...\n");
@@ -893,6 +933,7 @@ kneedeep_check:
 	for (int i=0; i<s2_numlumps ; i++,s2_lump_p++)
 		hashtable_insert(&altht, (void*)s2_lump_p, -1);
 
+#ifndef __PSP__
 	// compressed bumpmap wad
 	dbgio_printf("W_Init: Loading bumpmap PWAD into RAM...\n");
 
@@ -941,10 +982,11 @@ kneedeep_check:
 	bump_lumpcache = (lumpcache_t *)Z_Malloc(bump_numlumps * sizeof(lumpcache_t), PU_STATIC, 0);
 	memset(bump_lumpcache, 0, bump_numlumps * sizeof(lumpcache_t));
 	free(bump_wadfileptr);
+#endif
 
 	// common shared poly context/header used for all non-enemy sprites
 	// headers for sprite diffuse when no bumpmapping
-	pvr_poly_cxt_txr(&pvr_sprite_cxt, PVR_LIST_TR_POLY, D64_TPAL(PAL_ITEM), 1024, 1024, pvr_non_enemy, PVR_FILTER_BILINEAR);
+	PSP_GUTextureContext(&pvr_sprite_cxt, PVR_LIST_TR_POLY, D64_TPAL(PAL_ITEM), 512, 512, pvr_non_enemy, PVR_FILTER_BILINEAR);
 	pvr_sprite_cxt.gen.specular = PVR_SPECULAR_ENABLE;
 #if FOG_VERTEX
 	pvr_sprite_cxt.gen.fog_type = PVR_FOG_VERTEX;
@@ -953,9 +995,9 @@ kneedeep_check:
 	pvr_sprite_cxt.gen.fog_type = PVR_FOG_TABLE;
 	pvr_sprite_cxt.gen.fog_type2 = PVR_FOG_TABLE;
 #endif
-	pvr_poly_compile(&pvr_sprite_hdr, &pvr_sprite_cxt);
+	PSP_GUCompileTextureHeader(&pvr_sprite_hdr, &pvr_sprite_cxt);
 
-	pvr_poly_cxt_txr(&pvr_sprite_cxt, PVR_LIST_TR_POLY, D64_TPAL(PAL_ITEM), 1024, 1024, pvr_non_enemy, PVR_FILTER_NONE);
+	PSP_GUTextureContext(&pvr_sprite_cxt, PVR_LIST_TR_POLY, D64_TPAL(PAL_ITEM), 512, 512, pvr_non_enemy, PVR_FILTER_NONE);
 	pvr_sprite_cxt.gen.specular = PVR_SPECULAR_ENABLE;
 #if FOG_VERTEX
 	pvr_sprite_cxt.gen.fog_type = PVR_FOG_VERTEX;
@@ -964,10 +1006,10 @@ kneedeep_check:
 	pvr_sprite_cxt.gen.fog_type = PVR_FOG_TABLE;
 	pvr_sprite_cxt.gen.fog_type2 = PVR_FOG_TABLE;
 #endif
-	pvr_poly_compile(&pvr_sprite_hdr_nofilter, &pvr_sprite_cxt);
+	PSP_GUCompileTextureHeader(&pvr_sprite_hdr_nofilter, &pvr_sprite_cxt);
 
 	// headers for sprite diffuse when bumpmapping active (weapons)
-	pvr_poly_cxt_txr(&pvr_sprite_cxt, PVR_LIST_TR_POLY, D64_TPAL(PAL_ITEM), 1024, 1024, pvr_non_enemy, PVR_FILTER_BILINEAR);
+	PSP_GUTextureContext(&pvr_sprite_cxt, PVR_LIST_TR_POLY, D64_TPAL(PAL_ITEM), 512, 512, pvr_non_enemy, PVR_FILTER_BILINEAR);
 	pvr_sprite_cxt.gen.specular = PVR_SPECULAR_ENABLE;
 	pvr_sprite_cxt.gen.fog_type = PVR_FOG_TABLE;
 	pvr_sprite_cxt.gen.fog_type2 = PVR_FOG_TABLE;
@@ -976,9 +1018,9 @@ kneedeep_check:
 	pvr_sprite_cxt.blend.src_enable = 0;
 	// use secondary accumulation buffer
 	pvr_sprite_cxt.blend.dst_enable = 1;
-	pvr_poly_compile(&pvr_sprite_hdr_bump, &pvr_sprite_cxt);
+	PSP_GUCompileTextureHeader(&pvr_sprite_hdr_bump, &pvr_sprite_cxt);
 
-	pvr_poly_cxt_txr(&pvr_sprite_cxt, PVR_LIST_TR_POLY, D64_TPAL(PAL_ITEM), 1024, 1024, pvr_non_enemy, PVR_FILTER_NONE);
+	PSP_GUTextureContext(&pvr_sprite_cxt, PVR_LIST_TR_POLY, D64_TPAL(PAL_ITEM), 512, 512, pvr_non_enemy, PVR_FILTER_NONE);
 	pvr_sprite_cxt.gen.specular = PVR_SPECULAR_ENABLE;
 	pvr_sprite_cxt.gen.fog_type = PVR_FOG_TABLE;
 	pvr_sprite_cxt.gen.fog_type2 = PVR_FOG_TABLE;
@@ -987,7 +1029,7 @@ kneedeep_check:
 	pvr_sprite_cxt.blend.src_enable = 0;
 	// use secondary accumulation buffer
 	pvr_sprite_cxt.blend.dst_enable = 1;
-	pvr_poly_compile(&pvr_sprite_hdr_nofilter_bump, &pvr_sprite_cxt);
+	PSP_GUCompileTextureHeader(&pvr_sprite_hdr_nofilter_bump, &pvr_sprite_cxt);
 }
 
 // return human-readable "uncompressed" name for a lump number
@@ -1536,6 +1578,9 @@ static char tmpmapname[64];
 char extramaps[64][64];
 void W_ListExtraMaps(void)
 {
+#ifdef __PSP__
+	memset(extramaps, 0, sizeof(extramaps));
+#else
 	file_t d;
 	dirent_t *de;
 	int extramapnum = 0;
@@ -1566,4 +1611,5 @@ void W_ListExtraMaps(void)
 	}
 
 	fs_close(d);
+#endif
 }

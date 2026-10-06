@@ -42,7 +42,7 @@ void Z_Init(void)
 	uint8_t *mem = (uint8_t *)memalign(32, MEM_HEAP_SIZE);
 
 	if (!mem)
-		I_Error("failed to allocate %08x zone heap");
+		I_Error("failed to allocate %08x zone heap", MEM_HEAP_SIZE);
 
 	/* mars doesn't have a refzone */
 	mainzone = Z_InitZone(mem, MEM_HEAP_SIZE);
@@ -60,7 +60,7 @@ memzone_t *Z_InitZone(uint8_t *base, int size)
 {
 	memzone_t *zone;
 
-	memset(base, 0, MEM_HEAP_SIZE);
+	memset(base, 0, size);
 
 	zone = (memzone_t *)base;
 	zone->size = size;
@@ -105,8 +105,10 @@ void *Z_Malloc2(memzone_t *mainzone, int size, int tag, void *user)
 	int extra;
 	memblock_t *start, *rover, *newblock, *base;
 
+#ifndef __PSP__
 	if (backres[10] != 0xc3)
 		I_Error("failed allocation on %i", size);
+#endif
 
 	/* */
 	/* scan through the block list looking for the first free block */
@@ -624,9 +626,11 @@ void *__Z_Malloc2(memzone_t *mainzone, int size, int tag, void *user, uintptr_t 
 
 	Z_CheckZone(mainzone);
 
+#ifndef __PSP__
 	if (backres[10] != 0xc3) {
 		I_Error("failed allocation on %i", size);
 	}
+#endif
 
 	/* */
 	/* scan through the block list looking for the first free block */

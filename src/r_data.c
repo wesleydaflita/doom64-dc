@@ -1,10 +1,10 @@
 #include "doomdef.h"
 #include "r_local.h"
 #include "p_local.h"
-#include "sheets.h"
-
 #include <math.h>
-#include <dc/pvr.h>
+#include <stdlib.h>
+
+#include "sheets.h"
 
 pvr_vertex_t thing_verts[3];
 pvr_vertex_t line_verts[4];
@@ -73,26 +73,26 @@ void R_InitData(void)
 	R_InitTextures();
 	R_InitSprites();
 
-	pvr_poly_cxt_col(&flush_cxt, PVR_LIST_TR_POLY);
+	PSP_GUFlatContext(&flush_cxt, PVR_LIST_TR_POLY);
 	flush_cxt.blend.src_enable = 1;
 	flush_cxt.blend.dst_enable = 0;
 	flush_cxt.blend.src = PVR_BLEND_SRCALPHA;
 	flush_cxt.blend.dst = PVR_BLEND_INVSRCALPHA;
-	pvr_poly_compile(&flush_hdr, &flush_cxt);
+	PSP_GUCompileTextureHeader(&flush_hdr, &flush_cxt);
 
-	pvr_poly_cxt_col(&laser_cxt, PVR_LIST_OP_POLY);
-	pvr_poly_compile(&laser_hdr, &laser_cxt);
+	PSP_GUFlatContext(&laser_cxt, PVR_LIST_OP_POLY);
+	PSP_GUCompileTextureHeader(&laser_hdr, &laser_cxt);
 
-	pvr_poly_cxt_col(&thing_cxt, PVR_LIST_OP_POLY);
-	pvr_poly_compile(&thing_hdr, &thing_cxt);
+	PSP_GUFlatContext(&thing_cxt, PVR_LIST_OP_POLY);
+	PSP_GUCompileTextureHeader(&thing_hdr, &thing_cxt);
 
 	for (int vn = 0; vn < 3; vn++) {
 		thing_verts[vn].flags = PVR_CMD_VERTEX;
 	}
 	thing_verts[2].flags = PVR_CMD_VERTEX_EOL;
 
-	pvr_poly_cxt_col(&line_cxt, PVR_LIST_OP_POLY);
-	pvr_poly_compile(&line_hdr, &line_cxt);
+	PSP_GUFlatContext(&line_cxt, PVR_LIST_OP_POLY);
+	PSP_GUCompileTextureHeader(&line_hdr, &line_cxt);
 
 	for (int vn = 0; vn < 4; vn++) {
 		line_verts[vn].flags = PVR_CMD_VERTEX;
@@ -133,7 +133,7 @@ void R_InitStatus(void)
 	if (!status16)
 		I_Error("OOM for STATUS lump texture");
 
-	pvrstatus = pvr_mem_malloc(128 * 16 * 2);
+	pvrstatus = PSP_GUAllocTexture(128 * 16 * sizeof(uint16_t));
 	if (!pvrstatus)
 		I_Error("PVR OOM for STATUS lump texture");
 
@@ -176,10 +176,10 @@ void R_InitStatus(void)
 		for (int w = 0; w < width; w++)
 			status16[w + (h * 128)] = tmp_8bpp_pal[src[w + (h * width)]];
 
-	pvr_txr_load_ex(status16, pvrstatus, 128, 16, PVR_TXRLOAD_16BPP);
+	PSP_GULoadTexture(status16, pvrstatus, 128 * 16 * sizeof(uint16_t));
 
-	pvr_sprite_cxt_txr(&status_scxt, PVR_LIST_TR_POLY, D64_TARGB, 128, 16, pvrstatus, PVR_FILTER_NONE);
-	pvr_sprite_compile(&status_shdr, &status_scxt);
+	PSP_GUTextureContext(&status_scxt, PVR_LIST_TR_POLY, D64_TARGB, 128, 16, pvrstatus, PVR_FILTER_NONE);
+	PSP_GUCompileTextureHeader(&status_shdr, &status_scxt);
 
 	Z_Free(data);
 	free(status16);
@@ -195,7 +195,7 @@ void R_InitFont(void)
 	uint8_t *font8;
 	uint16_t *font16;
 	int fontlump = W_GetNumForName("SFONT");
-	pvrfont = pvr_mem_malloc(256 * 16 * 2);
+	pvrfont = PSP_GUAllocTexture(256 * 16 * sizeof(uint16_t));
 	if (!pvrfont)
 		I_Error("PVR OOM for SFONT lump texture");
 
@@ -253,10 +253,10 @@ void R_InitFont(void)
 		font16[j + 1] = tmp_8bpp_pal[(sps >> 4) & 0xf];
 	}
 
-	pvr_txr_load_ex(font16, pvrfont, 256, 16, PVR_TXRLOAD_16BPP);
+	PSP_GULoadTexture(font16, pvrfont, 256 * 16 * sizeof(uint16_t));
 
-	pvr_sprite_cxt_txr(&font_scxt, PVR_LIST_TR_POLY, D64_TARGB, 256, 16, pvrfont, PVR_FILTER_NONE);
-	pvr_sprite_compile(&font_shdr, &font_scxt);
+	PSP_GUTextureContext(&font_scxt, PVR_LIST_TR_POLY, D64_TARGB, 256, 16, pvrfont, PVR_FILTER_NONE);
+	PSP_GUCompileTextureHeader(&font_shdr, &font_scxt);
 
 	Z_Free(data);
 	free(font16);
@@ -280,41 +280,18 @@ void R_InitSymbols(void)
 	int symbols16_h;
 	void *data;
 
-	ssize_t symbolssize = fs_load("/pc/symbols.raw", &data);
-	if (symbolssize == -1) {
-		symbolssize = fs_load("/cd/symbols.raw", &data);
-		if (symbolssize == -1) {
-			// force the video output to do anything
-			pvr_scene_begin();
-			pvr_list_begin(PVR_LIST_OP_POLY);
-			pvr_list_finish();
-			pvr_scene_finish();
-			// force the video output to do anything
-			pvr_scene_begin();
-			pvr_list_begin(PVR_LIST_OP_POLY);
-			pvr_list_finish();
-			pvr_scene_finish();
-			// now dbgio_printf to fb should reliably show up even on HDMI-VGA
-			I_Error("Cant load from /pc or /cd");
-		} else {
-			dbgio_printf("using /cd for assets\n");
-			fnpre = "/cd";
-		}
-	} else {
-		dbgio_printf("using /pc for assets\n");
-		fnpre = "/pc";
-	}
+	char symbolspath[512];
+	snprintf(symbolspath, sizeof(symbolspath), "%s/symbols.raw", fnpre);
+	ssize_t symbolssize = PSP_LoadFile(symbolspath, &data);
+	if (symbolssize == -1)
+		I_Error("Could not load %s", symbolspath);
 
 	uint8_t *src = data + sizeof(gfxN64_t);
 
 	int width = SwapShort(((gfxN64_t *)data)->width);
 	int height = SwapShort(((gfxN64_t *)data)->height);
 
-	// width is 259... which means np2(w) was 512
-	// wasting 256x128x2 bytes of vram for nothing since there is nothing in those last 3 columns of pixels
-	// force it to 256 wide
-	// verified in-engine this looks ok
-	symbols16_w = 256;//np2(width);
+	symbols16_w = np2(width);
 	symbols16_h = np2(height);
 	symbols16size = (symbols16_w * symbols16_h * 2);
 
@@ -324,11 +301,11 @@ void R_InitSymbols(void)
 	rawsymbol_w = width;
 	rawsymbol_h = height;
 
-	pvr_symbols = pvr_mem_malloc(symbols16_w * symbols16_h * 2);
+	pvr_symbols = PSP_GUAllocTexture(symbols16_w * symbols16_h * sizeof(uint16_t));
 	if (!pvr_symbols)
 		I_Error("PVR OOM for SYMBOLS lump texture");
 
-	symbols16 = (uint16_t *)malloc(symbols16size);
+	symbols16 = (uint16_t *)calloc(1, symbols16size);
 	if (!symbols16)
 		I_Error("OOM for STATUS lump texture");
 
@@ -349,15 +326,16 @@ void R_InitSymbols(void)
 	tmp_8bpp_pal[0] = 0;
 
 	for (int h = 0; h < height; h++)
-		for (int w = 0; w < symbols16_w; w++)
+		for (int w = 0; w < width; w++)
 			symbols16[w + (h * symbols16_w)] = tmp_8bpp_pal[src[w + (h * width)]];
 
-	pvr_txr_load_ex(symbols16, pvr_symbols, symbols16_w, symbols16_h, PVR_TXRLOAD_16BPP);
+	PSP_GULoadTexture(symbols16, pvr_symbols, symbols16_w * symbols16_h * sizeof(uint16_t));
 
 	free(symbols16);
 
-	pvr_sprite_cxt_txr(&symbols_scxt, PVR_LIST_TR_POLY, D64_TARGB, symbols16_w, symbols16_h, pvr_symbols, PVR_FILTER_NONE);
-	pvr_sprite_compile(&symbols_shdr, &symbols_scxt);
+	PSP_GUTextureContext(&symbols_scxt, PVR_LIST_TR_POLY, D64_TARGB,
+		symbols16_w, symbols16_h, pvr_symbols, PVR_FILTER_NONE);
+	PSP_GUCompileTextureHeader(&symbols_shdr, &symbols_scxt);
 }
 
 extern int lump_frame[575 + 310];

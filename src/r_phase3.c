@@ -2,14 +2,12 @@
 #include "doomdef.h"
 #include "r_local.h"
 
-#include <dc/matrix.h>
-#include <dc/pvr.h>
-#include <dc/vector.h>
 #include <math.h>
 
 render_state_t __attribute__((aligned(32))) global_render_state;
 
 d64Poly_t next_poly;
+static pvr_vertex_t psp_poly_vertices[5];
 extern pvr_poly_hdr_t __attribute__((aligned(32))) laser_hdr;
 
 extern pvr_poly_hdr_t **txr_hdr_bump;
@@ -67,7 +65,7 @@ extern pvr_dr_state_t dr_state;
 
 extern void draw_pvr_line_hdr(vector_t *v1, vector_t *v2, int color);
 
-#if 1
+#if !defined(__PSP__)
 extern void array_fast_cpy(void **dst, const void **src, size_t n);
 extern void single_fast_cpy(void *dst, const void *src);
 #else
@@ -188,52 +186,12 @@ void R_TransformProjectileLights(void)
 // diffuse_hdr is pointer to header to submit if context change required
 static void init_poly(int list, d64Poly_t *poly, pvr_poly_hdr_t *diffuse_hdr, unsigned n_verts)
 {
-	void *list_tail;
-
+	(void)list;
 	poly->n_verts = n_verts;
 	memset(poly->dVerts, 0, sizeof(d64ListVert_t) * n_verts);
-
-	list_tail = (void *)pvr_vertbuf_tail(list);
-
-#if RANGECHECK
-	if (list == PVR_LIST_TR_POLY) {
-		const uintptr_t end_of_trbuf = (uintptr_t)tr_buf + TR_VERTBUF_SIZE;
-
-		if (((uintptr_t)list_tail + (5*32)) > end_of_trbuf)
-			I_Error("tr_buf overrun");
-	} else if (list == PVR_LIST_PT_POLY) {
-		const uintptr_t end_of_ptbuf = (uintptr_t)pt_buf + PT_VERTBUF_SIZE;
-
-		if (((uintptr_t)list_tail + (5*32)) > end_of_ptbuf)
-			I_Error("pt_buf overrun");
-	}
-#endif
-
-	// header always points to next usable position in vertbuf/DMA list
-	poly->hdr = (pvr_poly_hdr_t *)list_tail;
-
-	// when header must be re-submitted
-	if (global_render_state.context_change) {
-		// copy the contents of the header into poly struct
-		single_fast_cpy(poly->hdr, diffuse_hdr);
-		// advance the vertbuf/DMA list position
-		list_tail += sizeof(pvr_poly_hdr_t);
-	}
-
-	// set up 5 d64ListVert_t entries
-	// each entry maintains a pointer into the vertbuf/DMA list for a vertex
-	// near-z clipping is done in-place in the vertbuf/DMA list
-	// some quad clipping cases require an extra vert added to triangle strip
-	// this necessitates having contiguous space for 5 pvr_vertex_t available
-	d64ListVert_t *dv = poly->dVerts;
-	for (unsigned i = 0; i < 5; i++) {
-		// each d64ListVert_t gets a pointer to the corresponding pvr_vertex_t
-		(dv++)->v = (pvr_vertex_t *)list_tail;
-		list_tail += sizeof(pvr_vertex_t);
-		// each vert also maintains float rgb for dynamic lighting
-		// and a flag that gets set if the vertex is ever lit during TNL loop
-		// advance the vertbuf/DMA list position for next vert
-	}
+	poly->hdr = diffuse_hdr;
+	for (unsigned i = 0; i < 5; i++)
+		poly->dVerts[i].v = &psp_poly_vertices[i];
 }
 
 static int lf_idx(void)
@@ -281,6 +239,57 @@ extern int Wireframe;
 
 unsigned __attribute__((noinline)) clip_poly(d64Poly_t *p, unsigned p_vismask);
 extern fixed_t FogNear;
+
+#ifdef __PSP__
+static void PSP_DrawClippedQuadTriangles(d64Poly_t *poly)
+{
+	static const unsigned triangle_indices[2][3] = {
+		{0, 1, 2},
+		{2, 1, 3}
+	};
+
+	for (unsigned triangle = 0; triangle < 2; triangle++) {
+		pvr_vertex_t vertices[5];
+		d64Poly_t clipped = {0};
+		unsigned count;
+		unsigned vismask;
+
+		clipped.n_verts = 3;
+		clipped.hdr = poly->hdr;
+		for (unsigned i = 0; i < 5; i++)
+			clipped.dVerts[i].v = &vertices[i];
+		for (unsigned i = 0; i < 3; i++) {
+			unsigned source = triangle_indices[triangle][i];
+
+			vertices[i] = *poly->dVerts[source].v;
+			clipped.dVerts[i] = poly->dVerts[source];
+			clipped.dVerts[i].v = &vertices[i];
+		}
+
+		vismask = nearz_vismask(&clipped);
+		if (!(vismask & ~16))
+			continue;
+
+		clipped.dVerts[0].v->flags = PVR_CMD_VERTEX;
+		clipped.dVerts[1].v->flags = PVR_CMD_VERTEX;
+		clipped.dVerts[2].v->flags = PVR_CMD_VERTEX_EOL;
+		count = clip_poly(&clipped, vismask);
+		if (!count)
+			continue;
+
+		for (unsigned i = 0; i < count; i++) {
+			pvr_vertex_t *vertex = clipped.dVerts[i].v;
+			float w = clipped.dVerts[i].w;
+
+			vertex->x = (vertex->x - 320.0f * w) / 320.0f;
+			vertex->y = -(vertex->y - 240.0f * w) / 240.0f;
+			vertex->z = w;
+		}
+
+		PSP_GUDrawWorldPoly(poly->hdr, vertices, count);
+	}
+}
+#endif
 
 
 static void tnl_poly(int list, d64Poly_t *p)
@@ -351,6 +360,14 @@ static void tnl_poly(int list, d64Poly_t *p)
 
 	p_vismask = nearz_vismask(p);
 
+#ifdef __PSP__
+	if (p_vismask == 22 || p_vismask == 25) {
+		PSP_DrawClippedQuadTriangles(p);
+		global_render_state.context_change = 0;
+		return;
+	}
+#endif
+
 	// 0 or 16 means nothing visible, this happens
 	if (!(p_vismask & ~16))
 		return;
@@ -373,10 +390,17 @@ static void tnl_poly(int list, d64Poly_t *p)
 	dv = p->dVerts;
 	for (i = 0; i < verts_to_process; i++) {
 		pvr_vertex_t *pv = dv->v;
+#ifdef __PSP__
+		float w = dv->w;
+		pv->x = (pv->x - 320.0f * w) / 320.0f;
+		pv->y = -(pv->y - 240.0f * w) / 240.0f;
+		pv->z = w;
+#else
 		float invw = approx_recip(dv->w);
 		pv->x *= invw;
 		pv->y *= invw;
 		pv->z = invw;
+#endif
 
 		dv++;
 	}
@@ -414,27 +438,7 @@ static void tnl_poly(int list, d64Poly_t *p)
         draw_pvr_line_hdr(&v1, &v2, p->dVerts[0].v->argb);
 	}
 
-	uint32_t hdr_size = (global_render_state.context_change * sizeof(pvr_poly_hdr_t));
-	uint32_t amount = hdr_size + (verts_to_process * sizeof(pvr_vertex_t));
-
-	if (__builtin_expect(global_render_state.has_bump, 1)) {
-		// they are laid out consecutively in memory starting at the first pointer
-		pvr_vertex_t *diffuse_vert = p->dVerts[0].v;
-
-		if (global_render_state.context_change)
-			sq_fast_cpy(SQ_MASK_DEST(PVR_TA_INPUT), bumphdr, global_render_state.context_change);
-
-		for (i = 0; i < verts_to_process; i++) {
-			pvr_vertex_t *vert = pvr_dr_target(dr_state);
-			*vert = diffuse_vert[i];
-			vert->argb = 0xff000000;
-			vert->oargb = boargb;
-			pvr_dr_commit(vert);
-		}
-	}
-
-	// update diffuse/DMA list pointer
-	pvr_vertbuf_written(list, amount);
+	PSP_GUDrawWorldPoly(p->hdr, p->dVerts[0].v, verts_to_process);
 
 	global_render_state.context_change = 0;
 }
@@ -658,12 +662,8 @@ unsigned __attribute__((noinline)) clip_poly(d64Poly_t *p, unsigned p_vismask)
 // this is used to draw laser beams and nothing else
 static void laser_triangle(const pvr_vertex_t *v0, const pvr_vertex_t *v1, const pvr_vertex_t *v2)
 {
-	if (global_render_state.context_change)
-		sq_fast_cpy(SQ_MASK_DEST(PVR_TA_INPUT), &laser_hdr, 1);
-
-	sq_fast_cpy(SQ_MASK_DEST(PVR_TA_INPUT), v0, 1);
-	sq_fast_cpy(SQ_MASK_DEST(PVR_TA_INPUT), v1, 1);
-	sq_fast_cpy(SQ_MASK_DEST(PVR_TA_INPUT), v2, 1);
+	pvr_vertex_t vertices[3] = { *v0, *v1, *v2 };
+	PSP_GUDrawFlat(vertices, 3);
 
 	global_render_state.context_change = 0;
 }
@@ -2601,7 +2601,7 @@ void R_RenderThings(subsector_t *sub)
 					vram_low = 0;
 					for (unsigned i = 0; i < ALL_SPRITES_COUNT; i++) {
 						if (used_lumps[i] != -1) {
-							pvr_mem_free(pvr_spritecache[used_lumps[i]]);
+							PSP_GUFreeTexture(pvr_spritecache[used_lumps[i]]);
 							pvr_spritecache[used_lumps[i]] = NULL;
 						}
 					}
@@ -2668,7 +2668,7 @@ void R_RenderThings(subsector_t *sub)
 									if (lump_frame[next_lump_delidx] !=
 										NextFrameIdx) {
 										delidx = used_lumps[next_lump_delidx];
-										pvr_mem_free(pvr_spritecache[delidx]);
+										PSP_GUFreeTexture(pvr_spritecache[delidx]);
 										used_lumps[i] = -1;
 										lump_frame[i] = -1;
 										goto done_evicting;
@@ -2689,7 +2689,7 @@ void R_RenderThings(subsector_t *sub)
 
 								continue;
 							} else {
-								pvr_mem_free(pvr_spritecache[delidx]);
+								PSP_GUFreeTexture(pvr_spritecache[delidx]);
 								used_lumps[i] = -1;
 								lump_frame[i] = -1;
 								goto done_evicting;
@@ -2709,24 +2709,14 @@ void R_RenderThings(subsector_t *sub)
 			bail_evict:
 				if (!nosprite) {
 					uint32_t sprite_size = wp2 * hp2;
-					// vram_low gets set if the sprite will use
-					// more than 1/2 available VRAM
-					//	with a 256kb reservation for weapon bumpmap
-					if (((sprite_size << 1) + 262144) > pvr_mem_available()) {
-						nosprite = 1;
-						lump_frame[lumpoff] = -1;
-						used_lumps[lumpoff] = -1;
-						vram_low = 1;
-						goto bail_pvr_alloc;
-					}
 
-					pvr_spritecache[cached_index] = pvr_mem_malloc(sprite_size);
+					pvr_spritecache[cached_index] = PSP_GUAllocTexture(sprite_size);
 
 					if (!pvr_spritecache[cached_index])
 						I_Error("PVR OOM for sprite cache");
 
 					pvr_poly_cxt_t cxt_spritecache;
-					pvr_poly_cxt_txr(&cxt_spritecache, PVR_LIST_TR_POLY, D64_TPAL(PAL_ENEMY),
+					PSP_GUTextureContext(&cxt_spritecache, PVR_LIST_TR_POLY, D64_TPAL(PAL_ENEMY),
 						wp2, hp2, pvr_spritecache[cached_index], PVR_FILTER_BILINEAR);
 
 					cxt_spritecache.gen.specular = PVR_SPECULAR_ENABLE;
@@ -2741,18 +2731,16 @@ void R_RenderThings(subsector_t *sub)
 					if (!menu_settings.VideoFilter)
 						cxt_spritecache.txr.filter = PVR_FILTER_NONE;
 
-					pvr_poly_compile(&hdr_spritecache[cached_index], &cxt_spritecache);
+					PSP_GUCompileTextureHeader(&hdr_spritecache[cached_index], &cxt_spritecache);
 
-					pvr_txr_load(src, pvr_spritecache[cached_index], sprite_size);
+					uint8_t *padded = pvr_spritecache[cached_index];
+					if (PSP_GUUntwiddle8(src, padded, (int)wp2,
+							(int)hp2))
+						I_Error("Could not untwiddle sprite lump %d", lump);
 
 					theheader = &hdr_spritecache[cached_index];
 
 				skip_cached_setup:
-
-					int *hdr_ptr = &((int *)&hdr_spritecache[cached_index])[2];
-					int newhp2v = *hdr_ptr;
-					newhp2v = (newhp2v & 0xFFFF8FFF) | (menu_settings.VideoFilter << 12);
-					*hdr_ptr = newhp2v;
 
 					init_poly(PVR_LIST_TR_POLY, &next_poly, &hdr_spritecache[cached_index], 4);
 
@@ -3110,6 +3098,7 @@ void R_RenderPSprites(void)
 				wepn_verts[3].z = 4.0;
 			}
 
+#ifndef __PSP__
 			float avg_dx = 0;
 			float avg_dy = 0;
 			float avg_dz = 0;
@@ -3228,6 +3217,12 @@ void R_RenderPSprites(void)
 								  (int)Q;
 				}
 			}
+#else
+			for (j = 0; j < 4; j++) {
+				wepn_verts[j].argb = quad_color;
+				wepn_verts[j].oargb = quad_light_color;
+			}
+#endif
 
 			x = ((psp->sx >> FRACBITS) - (((spriteDC_t *)data)->xoffs)) + 160;
 			y = ((psp->sy >> FRACBITS) - (((spriteDC_t *)data)->yoffs)) + 239;
@@ -3288,6 +3283,7 @@ void R_RenderPSprites(void)
 			vert->u = u2 - halfover1024;
 			vert->v = v1 + halfover1024;
 
+#ifndef __PSP__
 			if (global_render_state.has_bump) {
 				memcpy(bump_verts, wepn_verts, 4 * sizeof(pvr_vertex_t));
 
@@ -3500,7 +3496,11 @@ void R_RenderPSprites(void)
 				pvr_list_prim(PVR_LIST_TR_POLY, bump_verts,
 							  4 * sizeof(pvr_vertex_t));
 			}
+#endif
 
+#ifdef __PSP__
+			PSP_GUDrawOverlayPoly(&pvr_sprite_hdr, wepn_verts, 4);
+#else
 			pvr_poly_hdr_t *pspr_diffuse_hdr;
 			if (lump == 935 ||
 				lump == 939 ||
@@ -3536,6 +3536,7 @@ void R_RenderPSprites(void)
 							  sizeof(pvr_poly_hdr_t));
 				pvr_list_prim(PVR_LIST_TR_POLY, wepn_verts, sizeof(wepn_verts));
 			}
+#endif
 
 			global_render_state.has_bump = 0;
 		} // if ((state = psp->state) != 0)

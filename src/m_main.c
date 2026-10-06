@@ -3,6 +3,7 @@
 #include "doomdef.h"
 #include "r_local.h"
 #include "st_main.h"
+#include <stdio.h>
 
 int Wireframe = 0;
 
@@ -206,16 +207,15 @@ menuitem_t Menu_2Episode[NUM_MENU_2EPISODES] =
 };
 
 
-#define NUM_MENU_OPTIONS 7
+#define NUM_MENU_OPTIONS 6
 menuitem_t Menu_Options[NUM_MENU_OPTIONS] =
 	{
-		{ 0, 112, 60 }, // Gamepad
-		{ 41, 112, 80 }, // Movement
-		{ 1, 112, 100 }, // Volume
-		{ 2, 112, 120 }, // Video
-		{ 51, 112, 140 }, // Display
-		{ 63, 112, 160 }, // Status HUD
-		{ 6, 112, 180 /*200*/ }, // Return
+		{ 41, 112, 70 }, // Movement
+		{ 1, 112, 90 }, // Volume
+		{ 2, 112, 110 }, // Video
+		{ 51, 112, 130 }, // Display
+		{ 63, 112, 150 }, // Status HUD
+		{ 6, 112, 170 }, // Return
 	};
 
 #define NUM_MENU_VOLUME 3
@@ -226,13 +226,12 @@ menuitem_t Menu_Volume[NUM_MENU_VOLUME] =
 		{ 6, 82, 140 }, // Return
 	};
 
-#define NUM_MENU_MOVEMENT 5
+#define NUM_MENU_MOVEMENT 4
 menuitem_t Menu_Movement[NUM_MENU_MOVEMENT] =
 	{
 		{ 52, 82, 60 }, // Motion Bob
 		{ 43, 82, 100 }, // Sensitivity
 		{ 12, 82, 140 }, // Autorun
-		{ 95, 82, 160 }, // Rumble
 		{ 6, 82, 180 }, // Return
 	};
 
@@ -246,12 +245,11 @@ menuitem_t Menu_Video[NUM_MENU_VIDEO] = {
 	{ 6, 82, 180 }, // Return
 };
 
-#define NUM_MENU_DISPLAY 4
+#define NUM_MENU_DISPLAY 3
 menuitem_t Menu_Display[NUM_MENU_DISPLAY] =
 	{
 		{ 61, 62, 120 - 60 }, // Story Text
 		{ 62, 62, 140 - 60 }, // Map Stats
-		{ 97, 62, 160 - 60 }, // VMU Display
 		{ 6, 62, 180 - 60 }, // Return
 	};
 
@@ -367,7 +365,6 @@ int last_ticon;
 
 skill_t startskill;
 int startmap;
-int UseVMU;
 
 //-----------------------------------------
 
@@ -376,8 +373,6 @@ static char textbuff[256];
 #define MAX_BRIGHTNESS 127
 
 doom64_settings_t  __attribute__((aligned(32))) menu_settings;
-
-int force_vmu_refresh = 0;
 
 #define M_FILTER_NONE 0
 #define M_FILTER_BILINEAR 2
@@ -390,7 +385,6 @@ void M_ResetSettings(doom64_settings_t *s) {
 	s->enable_messages = 1;
 	s->M_SENSITIVITY = 27;
 	s->MotionBob = 16 << FRACBITS;
-	s->Rumble = 0;
 	s->VideoFilter = M_FILTER_BILINEAR;
 	s->Autorun = 1;
 	s->StoryText = 1;
@@ -401,14 +395,6 @@ void M_ResetSettings(doom64_settings_t *s) {
 	s->FpsUncap = 1;
 	s->PlayDeadzone = 0;
 	s->Interpolate = 0;
-	s->VmuDisplay = 0;
-
-	if (I_CheckControllerPak() == 0) {
-		I_ReadPakSettings(s);
-	}
-
-	I_InitRumble((i_rumble_pak_t)s->Rumble);
-
 	s->version = SETTINGS_SAVE_VERSION;
 	s->runintroduction = 0;
 }
@@ -476,6 +462,7 @@ int M_RunTitle(void)
 	return 0;
 }
 
+#ifndef __PSP__
 int M_ControllerPak(void)
 {
 	int exit;
@@ -565,6 +552,7 @@ int M_ControllerPak(void)
 
 	return exit;
 }
+#endif
 
 #define MAXSENSITIVITY 20
 
@@ -719,7 +707,6 @@ int M_MenuTicker(void)
 	unsigned int buttons, oldbuttons;
 	int exit;
 	int truebuttons;
-	int ret;
 	int i;
 	mobj_t *m;
 
@@ -788,21 +775,6 @@ int M_MenuTicker(void)
 				truebuttons = (0 < (buttons & ALL_BUTTONS));
 
 			switch (MenuItem[cursorpos].casepos) {
-			case 0: // Gamepad
-				if (truebuttons) {
-					S_StartSound(NULL, sfx_pistol);
-					M_SaveMenuData();
-
-					MenuCall = M_ControlPadDrawer;
-					cursorpos = 0;
-					linepos = 0;
-
-					MiniLoop(M_FadeInStart, M_FadeOutStart, M_ControlPadTicker, M_MenuGameDrawer);
-					M_RestoreMenuData(true);
-					return ga_nothing;
-				}
-				break;
-
 			case 1: // Volume
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_pistol);
@@ -839,37 +811,13 @@ int M_MenuTicker(void)
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_pistol);
 					M_SaveMenuData();
-
-					ret = I_CheckControllerPak();
-					exit = ga_exit;
-
-					if (ret == 0) {
-						if (I_ReadPakFile() == 0) {
-							UseVMU = 1;
-
-							MenuCall = M_LoadPakDrawer;
-
-							exit = MiniLoop(M_LoadPakStart, M_LoadPakStop, M_LoadPakTicker, M_MenuGameDrawer);
-						} else
-							exit = ga_exit;
-					}
-
-					if (exit == ga_exit) {
-						MenuCall = M_PasswordDrawer;
-
-						exit = MiniLoop(M_PasswordStart, M_PasswordStop, M_PasswordTicker, M_MenuGameDrawer);
-					}
+					MenuCall = M_PasswordDrawer;
+					exit = MiniLoop(M_PasswordStart, M_PasswordStop, M_PasswordTicker, M_MenuGameDrawer);
 
 					if (exit == ga_exit) {
 						M_RestoreMenuData(true);
 						return ga_nothing;
 					}
-
-					if (UseVMU != 0) {
-						return exit;
-					}
-
-					UseVMU = (M_ControllerPak() == 0);
 					return exit;
 				}
 				break;
@@ -886,9 +834,6 @@ int M_MenuTicker(void)
 
 					exit = MiniLoop(M_FadeInStart, M_FadeOutStart, M_MenuTicker, M_MenuGameDrawer);
 					M_RestoreMenuData((exit == ga_exit));
-
-					// have to exit eventually, good enough place to hook this
-					I_SavePakSettings(&menu_settings);
 
 					if (exit == ga_exit) {
 						return ga_nothing;
@@ -929,8 +874,6 @@ int M_MenuTicker(void)
 			case 6: // Return
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_pistol);
-					// have to exit eventually, good enough place to hook this
-					I_SavePakSettings(&menu_settings);
 					return ga_exit;
 				}
 				break;
@@ -1026,9 +969,6 @@ int M_MenuTicker(void)
 					exit = MiniLoop(M_FadeInStart, M_FadeOutStart, M_MenuTicker, M_MenuGameDrawer);
 					M_RestoreMenuData((exit == ga_exit));
 
-					// have to exit eventually, good enough place to hook this
-					I_SavePakSettings(&menu_settings);
-
 					if (exit == ga_exit)
 						return ga_nothing;
 
@@ -1047,9 +987,6 @@ int M_MenuTicker(void)
 			case 14: // New Game
 				if (truebuttons)
 				{
-					// Check ControllerPak
-                    UseVMU = (M_ControllerPak() == 0);
-
 					if (extra_episodes) {
 						S_StartSound(NULL, sfx_pistol);
 						M_SaveMenuData();
@@ -1440,25 +1377,6 @@ int M_MenuTicker(void)
 				}
 				break;
 
-			case 44: // Manage Pak
-				if (truebuttons) {
-					S_StartSound(NULL, sfx_pistol);
-					M_SaveMenuData();
-
-					MenuCall = M_ControllerPakDrawer;
-					linepos = 0;
-					cursorpos = 0;
-
-					exit = MiniLoop(M_FadeInStart, M_FadeOutStart, M_ScreenTicker, M_MenuGameDrawer);
-					M_RestoreMenuData((exit == ga_exit));
-
-					if (exit == ga_exit)
-						return ga_nothing;
-
-					return exit;
-				}
-				break;
-
 			case 50: // [GEC and Immorpher] Video filtering mode
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_switch2);
@@ -1693,15 +1611,6 @@ int M_MenuTicker(void)
 				}
 				break;
 
-			case 95:
-				if (truebuttons) {
-					S_StartSound(NULL, sfx_switch2);
-					menu_settings.Rumble = (menu_settings.Rumble + 1) % NUM_RUMBLEPAKS;
-					I_InitRumble((i_rumble_pak_t)menu_settings.Rumble);
-					return ga_nothing;
-				}
-				break;
-
 			case 96: // Interpolate
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_switch2);
@@ -1710,14 +1619,6 @@ int M_MenuTicker(void)
 				}
 				break;
 
-			case 97: // VMU Display mode
-				if (truebuttons) {
-					S_StartSound(NULL, sfx_switch2);
-					menu_settings.VmuDisplay = (menu_settings.VmuDisplay + 1) % 3;
-					force_vmu_refresh = 1;
-					return ga_nothing;
-				}
-				break;
 			}
 			exit = ga_nothing;
 		}
@@ -1744,14 +1645,6 @@ void M_MenuTitleDrawer(void)
 		ST_DrawString(-1, 20, "Options", text_alpha | 0xc0000000, ST_ABOVE_OVL);
 	} else if (MenuItem == Menu_Quit) {
 		ST_DrawString(-1, 20, "Quit Game?", text_alpha | 0xc0000000, ST_ABOVE_OVL);
-	} else if (MenuItem == Menu_DeleteNote) {
-		ST_DrawString(-1, 20, "Delete Game Note?", text_alpha | 0xc0000000, ST_ABOVE_OVL);
-	} else if (MenuItem == Menu_ControllerPakBad) {
-		ST_DrawString(-1, 20, "VMU Bad", text_alpha | 0xc0000000, ST_ABOVE_OVL);
-	} else if (MenuItem == Menu_ControllerPakFull) {
-		ST_DrawString(-1, 20, "VMU Full", text_alpha | 0xc0000000, ST_ABOVE_OVL);
-	} else if (MenuItem == Menu_CreateNote) {
-		ST_DrawString(-1, 20, "Create Game Note?", text_alpha | 0xc0000000, ST_ABOVE_OVL);
 	} else if (MenuItem == Menu_Episode) {
 		ST_DrawString(-1, 20, "Choose Campaign", text_alpha | 0xc0000000, ST_ABOVE_OVL);
 	} else if (MenuItem == Menu_2Episode) {
@@ -1896,17 +1789,6 @@ void M_MovementDrawer(void)
 				text = "On";
 			else
 				text = "Off";
-		} else if (casepos == 95) {
-			if (menu_settings.Rumble == 0)
-				text = "Off";
-			else if (menu_settings.Rumble == 1)
-				text = M_TXT98;
-			else if (menu_settings.Rumble == 2)
-				text = M_TXT99;	
-			else if (menu_settings.Rumble == 3)
-				text = M_TXT100;	
-			else
-				text = "?";
 		} else {
 			text = NULL;
 		}
@@ -1986,15 +1868,6 @@ void M_DisplayDrawer(void)
 			text = menu_settings.StoryText ? "On" : "Off";
 		} else if (casepos == 62) { // Map stats:
 			text = menu_settings.MapStats ? "On" : "Off";
-		} else if (casepos == 97) { // vmu
-			if (menu_settings.VmuDisplay == 0)
-				text = "Off";
-			else if (menu_settings.VmuDisplay == 1)
-				text = "Face";
-			else if (menu_settings.VmuDisplay == 2)
-				text = "Stats Face";
-			else
-				text = NULL;
 		} else {
 			text = NULL;
 		}
@@ -2048,16 +1921,10 @@ void M_StatusHUDDrawer(void)
 }
 
 uint16_t bgpal[256];
-uint16_t biggest_bg[512 * 256];
+uint16_t biggest_bg[2][512 * 256];
 uint64_t lastname[2] = { 0xffffffff, 0xffffffff };
 int bg_last_width[2];
 int bg_last_height[2];
-pvr_ptr_t pvrbg[2] = { 0, 0 };
-
-static pvr_sprite_cxt_t bg_scxt;
-pvr_sprite_hdr_t bg_shdr[2];
-pvr_sprite_txr_t bg_stxr[2];
-
 static char __attribute__((aligned(32))) bgnamebuf[8];
 
 static d64_bg_t d64_bg[NUM_BG] = {
@@ -2116,16 +1983,6 @@ void M_DrawBackground(d64_bg_enum_t bg, int alpha)
 	memset(bgnamebuf, 0, 8);
 	memcpy(bgnamebuf, name, strlen(name) < 8 ? strlen(name) : 8);
 
-	if (!pvrbg[num]) {
-		pvrbg[num] = pvr_mem_malloc(512 * 512);
-
-		if (!pvrbg[num])
-			I_Error("PVR OOM for background %s [%d]", name, num);
-
-		pvr_sprite_cxt_txr(&bg_scxt, PVR_LIST_TR_POLY, D64_TARGB, 512, 256, pvrbg[num], PVR_FILTER_NONE);
-		pvr_sprite_compile(&bg_shdr[num], &bg_scxt);
-	}
-
 	//uint32_t wasnt enough to differentiate between the credit screens
 	if (*(uint64_t *)(bgnamebuf) != lastname[num]) {
 		lastname[num] = *(uint64_t *)bgnamebuf;
@@ -2157,11 +2014,9 @@ void M_DrawBackground(d64_bg_enum_t bg, int alpha)
 
 		for (unsigned h = 0; h < height; h++)
 			for (unsigned w = 0; w < width; w++)
-				biggest_bg[w + (h * 512)] = bgpal[gfxsrc[w + (h * width)]];
+				biggest_bg[num][w + (h * 512)] = bgpal[gfxsrc[w + (h * width)]];
 
 		Z_Free(data);
-
-		pvr_txr_load_ex(biggest_bg, pvrbg[num], 512, 256, PVR_TXRLOAD_16BPP);
 	}
 
 	u1 = 0.0f;
@@ -2169,31 +2024,18 @@ void M_DrawBackground(d64_bg_enum_t bg, int alpha)
 	u2 = (float)bg_last_width[num] * recip512;;
 	v2 = (float)bg_last_height[num] * recip256;;
 
-	bg_stxr[num].flags = PVR_CMD_VERTEX_EOL;
-	bg_stxr[num].az = z;
-	bg_stxr[num].bz = z;
-	bg_stxr[num].cz = z;
-	bg_stxr[num].dummy = 0;
-	bg_shdr[num].argb = (a1 << 24) | 0x00ffffff;
-
 	x1 = (float)(x * RES_RATIO);
 	y1 = (float)(y * RES_RATIO);
 	x2 = (float)((x + bg_last_width[num]) * RES_RATIO);
 	y2 = (float)((y + bg_last_height[num]) * RES_RATIO);
 
-	bg_stxr[num].ax = x1;
-	bg_stxr[num].ay = y2;
-	bg_stxr[num].bx = x1;
-	bg_stxr[num].by = y1;
-	bg_stxr[num].cx = x2;
-	bg_stxr[num].cy = y1;
-	bg_stxr[num].dx = x2;
-	bg_stxr[num].dy = y2;
-	bg_stxr[num].auv = PVR_PACK_16BIT_UV(u1, v2);
-	bg_stxr[num].buv = PVR_PACK_16BIT_UV(u1, v1);
-	bg_stxr[num].cuv = PVR_PACK_16BIT_UV(u2, v1);
-	pvr_list_prim(PVR_LIST_TR_POLY, &bg_shdr[num], sizeof(pvr_sprite_hdr_t));
-	pvr_list_prim(PVR_LIST_TR_POLY, &bg_stxr[num], sizeof(pvr_sprite_txr_t));
+	pvr_vertex_t bg_vertices[4] = {
+		{PVR_CMD_VERTEX, x1, y2, z, (a1 << 24) | 0x00ffffff, 0, u1, v2},
+		{PVR_CMD_VERTEX, x1, y1, z, (a1 << 24) | 0x00ffffff, 0, u1, v1},
+		{PVR_CMD_VERTEX, x2, y1, z, (a1 << 24) | 0x00ffffff, 0, u2, v1},
+		{PVR_CMD_VERTEX_EOL, x2, y2, z, (a1 << 24) | 0x00ffffff, 0, u2, v2}
+	};
+	PSP_GUDraw5551(biggest_bg[num], 512, 256, bg_vertices, 4);
 
 	globallump = -1;
 	global_render_state.context_change = 1;
@@ -2211,12 +2053,12 @@ extern pvr_poly_hdr_t overlay_hdr;
 // now it has no params
 void M_DrawOverlay(void)
 {
-	pvr_list_prim(PVR_LIST_TR_POLY, &overlay_hdr, sizeof(pvr_poly_hdr_t));
-	pvr_list_prim(PVR_LIST_TR_POLY, overlay_verts, sizeof(overlay_verts));
+	PSP_GUDrawFlat(overlay_verts, 4);
 	globallump = -1;
 	global_render_state.context_change = 1;
 }
 
+#ifndef __PSP__
 int M_ScreenTicker(void)
 {
 	static int last_f_gametic = 0;
@@ -2874,3 +2716,4 @@ void M_ControlPadDrawer(void)
 
 	ST_DrawString(-1, 210, "press \x8d to exit", text_alpha | 0xffffff00, ST_ABOVE_OVL);
 }
+#endif
