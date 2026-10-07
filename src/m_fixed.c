@@ -73,9 +73,14 @@ fixed_t FixedDiv(fixed_t a, fixed_t b)
 // significantly faster than int divide and *just about* accurate enough for gameplay
 fixed_t FixedDivFloat(register fixed_t a, register fixed_t b)
 {
+	if (b == 0) {
+		return (fixed_t) 0;
+	}
+
 	float af = (float)a;
 	float bf = (float)b;
 	float cf = af / bf;
+
 	return (fixed_t)(cf * 65536.0f);
 }
 

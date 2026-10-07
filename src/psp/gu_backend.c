@@ -10,6 +10,9 @@
 #define PSP_FRAME_HEIGHT 272
 #define PSP_BUFFER_WIDTH 512
 #define PSP_GU_LIST_SIZE (512 * 1024)
+#define NEAR_Z 8.0f
+#define GUARD_K  1.25f   
+#define MAX_POLY 16
 
 static unsigned int __attribute__((aligned(16))) gu_list[PSP_GU_LIST_SIZE];
 extern void __I_Error(const char *funcname, char *error, ...);
@@ -107,6 +110,86 @@ int PSP_GUUntwiddle8(const uint8_t *source, uint8_t *texture,
 	}
 
 	return 0;
+}
+
+static uint32_t LerpARGB(uint32_t a, uint32_t b, float t)
+{
+	uint32_t out = 0;
+	for (int s = 0; s < 32; s += 8) {
+		float ca = (a >> s) & 0xff, cb = (b >> s) & 0xff;
+		out |= (uint32_t)(ca + (cb - ca) * t + 0.5f) << s;
+	}
+	return out;
+}
+
+static int PSP_ClipPlane(const pvr_vertex_t *in, int n, pvr_vertex_t *out,
+		float pa, float pb, float pc, float pd)
+{
+	int m = 0;
+
+	for (int i = 0; i < n; i++) {
+		const pvr_vertex_t *a = &in[i];
+		const pvr_vertex_t *b = &in[(i + 1) % n];
+		float da = pa * a->x + pb * a->y + pc * a->z + pd;
+		float db = pa * b->x + pb * b->y + pc * b->z + pd;
+
+		if (da >= 0.0f)
+			out[m++] = *a;
+		if ((da >= 0.0f) != (db >= 0.0f)) {
+			float t = da / (da - db);
+			pvr_vertex_t v = *a;
+
+			v.x = a->x + (b->x - a->x) * t;
+			v.y = a->y + (b->y - a->y) * t;
+			v.z = a->z + (b->z - a->z) * t;
+			v.u = a->u + (b->u - a->u) * t;
+			v.v = a->v + (b->v - a->v) * t;
+			v.argb = LerpARGB(a->argb, b->argb, t);
+			out[m++] = v;
+		}
+	}
+	return m;
+}
+
+static int PSP_ClipFrustum(const pvr_vertex_t *in, int n, pvr_vertex_t *out)
+{
+	pvr_vertex_t tmp[MAX_POLY];
+	int m;
+
+	m = PSP_ClipPlane(in,  n, tmp, 0,  0, 1, -NEAR_Z);   if (m < 3) return 0;
+	n = PSP_ClipPlane(tmp, m, out,  1,  0, GUARD_K, 0);  if (n < 3) return 0;
+	m = PSP_ClipPlane(out, n, tmp, -1,  0, GUARD_K, 0);  if (m < 3) return 0;
+	n = PSP_ClipPlane(tmp, m, out,  0,  1, GUARD_K, 0);  if (n < 3) return 0;
+	m = PSP_ClipPlane(out, n, tmp,  0, -1, GUARD_K, 0);  if (m < 3) return 0;
+	memcpy(out, tmp, m * sizeof(*out));
+	return m;
+}
+
+static int PSP_ClipNear(const pvr_vertex_t *in, int n, pvr_vertex_t *out)
+{
+	int m = 0;
+
+	for (int i = 0; i < n; i++) {
+		const pvr_vertex_t *a = &in[i];
+		const pvr_vertex_t *b = &in[(i + 1) % n];
+		int ain = a->z >= NEAR_Z;
+		int bin = b->z >= NEAR_Z;
+
+		if (ain)
+			out[m++] = *a;
+		if (ain != bin) {
+			float t = (NEAR_Z - a->z) / (b->z - a->z);
+			pvr_vertex_t v = *a;
+
+			v.x = a->x + (b->x - a->x) * t;
+			v.y = a->y + (b->y - a->y) * t;
+			v.z = NEAR_Z;
+			v.u = a->u + (b->u - a->u) * t;
+			v.v = a->v + (b->v - a->v) * t;
+			out[m++] = v;   /* keeps a's argb; lerp it if lighting pops */
+		}
+	}
+	return m;
 }
 
 void PSP_GUTextureContext(pvr_poly_cxt_t *context, int list, int format,
@@ -237,7 +320,7 @@ static void PSP_GUDrawFlatInternal(const pvr_vertex_t *vertices, int count,
 {
 	gu_vertex_t *draw_vertices;
 
-	if (!vertices || count < 3 || count > 5)
+	if (!vertices || count < 3 || count > MAX_POLY)
 		return;
 
 	draw_vertices = sceGuGetMemory(count * sizeof(*draw_vertices));
@@ -301,7 +384,7 @@ static void PSP_GUDrawIndexedInternal(const uint8_t *texture, int width,
 {
 	gu_texture_vertex_t *draw_vertices;
 
-	if (!texture || !vertices || count < 3 || count > 5)
+	if (!texture || !vertices || count < 3 || count > MAX_POLY)
 		return;
 
 	PSP_NormalizeTextureSize(&width, &height);
@@ -327,11 +410,9 @@ static void PSP_GUDrawIndexedInternal(const uint8_t *texture, int width,
 			draw_vertices[i].y = vertices[i].y;
 			draw_vertices[i].z = vertices[i].z;
 		} else {
-			draw_vertices[i].x =
-				vertices[i].x * (PSP_FRAME_WIDTH / 640.0f);
-			draw_vertices[i].y =
-				vertices[i].y * (PSP_FRAME_HEIGHT / 480.0f);
-			draw_vertices[i].z = vertices[i].z;
+			draw_vertices[i].x = floorf(vertices[i].x * (PSP_FRAME_WIDTH  / 640.0f) + 0.5f);
+	draw_vertices[i].y = floorf(vertices[i].y * (PSP_FRAME_HEIGHT / 480.0f) + 0.5f);
+	draw_vertices[i].z = vertices[i].z;
 		}
 	}
 
@@ -503,7 +584,8 @@ static const pvr_vertex_t *PSP_OrderWorldVertices(
 		return vertices;
 
 	for (int i = 0; i < count; i++) {
-		float z = vertices[i].z > 0.0f ? vertices[i].z : 1.0f;
+		//float z = vertices[i].z > 0.0f ? vertices[i].z : 1.0f;
+		float z = vertices[i].z;
 
 		ordered[i] = vertices[i];
 		center_x += vertices[i].x / z;
@@ -531,34 +613,32 @@ void PSP_GUDrawWorldPoly(const pvr_poly_hdr_t *header,
 		const pvr_vertex_t *vertices, int count)
 {
 	const pvr_poly_cxt_t *context;
-	pvr_vertex_t ordered_vertices[5];
-	int format;
+	pvr_vertex_t ordered[5];
+	pvr_vertex_t clipped[MAX_POLY];
+	int translucent, alpha_test;
 
-	if (!header || !vertices)
+	if (!header || !vertices || count < 3 || count > 5)
 		return;
 
 	context = &header->context;
-	vertices = PSP_OrderWorldVertices(vertices, count, ordered_vertices);
-	int translucent = context->list == PVR_LIST_TR_POLY;
-	int alpha_test = context->list != PVR_LIST_OP_POLY;
+	vertices = PSP_OrderWorldVertices(vertices, count, ordered);
+count = PSP_ClipFrustum(vertices, count, clipped);   /* clipped[MAX_POLY] */
+if (count < 3)
+	return;
+vertices = clipped;
+
+	translucent = context->list == PVR_LIST_TR_POLY;
+	alpha_test = context->list != PVR_LIST_OP_POLY;
+
 	if (!context->txr.base) {
 		PSP_GUDrawFlatInternal(vertices, count, 1, translucent, 0);
 		return;
 	}
-
-	format = context->txr.format;
-	if (format & PVR_TXRFMT_PAL8BPP) {
-		PSP_GUDrawIndexedInternal(context->txr.base,
-			context->txr.width, context->txr.height,
-			context->txr.palette, 			vertices, count, 1, translucent,
-			alpha_test, context->txr.filter, 0,
-			context->txr.wrap_s, context->txr.wrap_t, 0);
-	} else {
-		PSP_GUDraw5551Internal(context->txr.base, context->txr.width,
-			context->txr.height, vertices, count, 1, translucent,
-			alpha_test, context->txr.filter, 0,
-			context->txr.wrap_s, context->txr.wrap_t, 0);
-	}
+	PSP_GUDrawIndexedInternal(context->txr.base,
+		context->txr.width, context->txr.height,
+		context->txr.palette, vertices, count, 1, translucent,
+		alpha_test, context->txr.filter, 0,
+		context->txr.wrap_s, context->txr.wrap_t, 0);
 }
 
 void PSP_GUDrawOverlayPoly(const pvr_poly_hdr_t *header,
@@ -572,20 +652,10 @@ void PSP_GUDrawOverlayPoly(const pvr_poly_hdr_t *header,
 
 	context = &header->context;
 	translucent = context->list == PVR_LIST_TR_POLY;
-	if (!context->txr.base) {
-		PSP_GUDrawFlatInternal(vertices, count, 0, translucent, 1);
-		return;
-	}
 
-	if (context->txr.format & PVR_TXRFMT_PAL8BPP) {
-		PSP_GUDrawIndexedInternal(context->txr.base, context->txr.width,
-			context->txr.height, context->txr.palette, vertices, count,
-			0, translucent, 1, context->txr.filter, 1,
-			context->txr.wrap_s, context->txr.wrap_t, 1);
-	} else {
-		PSP_GUDraw5551Internal(context->txr.base, context->txr.width,
-			context->txr.height, vertices, count, 0, translucent, 1,
-			context->txr.filter, 1,
-			context->txr.wrap_s, context->txr.wrap_t, 1);
-	}
+	PSP_GUDrawIndexedInternal(context->txr.base, context->txr.width,
+		context->txr.height, context->txr.palette, vertices, count,
+		0, translucent, 1, context->txr.filter, 1,
+		context->txr.wrap_s, GU_CLAMP, 1);
+
 }
