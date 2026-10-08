@@ -333,10 +333,11 @@ static void PSP_GUDrawFlatInternal(const pvr_vertex_t *vertices, int count,
 		uint32_t green = (argb >> 8) & 0xff;
 		uint32_t blue = argb & 0xff;
 
-		draw_vertices[i].color = (argb & 0xff000000) | (blue << 16) |
-			(green << 8) | red;
-		draw_vertices[i].x = vertices[i].x;
-		draw_vertices[i].y = vertices[i].y;
+		draw_vertices[i].color = (argb & 0xff000000) |
+			(blue << 16) | (green << 8) | red;
+
+		draw_vertices[i].x = floorf(vertices[i].x * (PSP_FRAME_WIDTH  / 640.0f) + 0.5f);
+		draw_vertices[i].y = floorf(vertices[i].y * (PSP_FRAME_HEIGHT / 480.0f) + 0.5f);
 		draw_vertices[i].z = vertices[i].z;
 	}
 
@@ -347,7 +348,7 @@ static void PSP_GUDrawFlatInternal(const pvr_vertex_t *vertices, int count,
 		sceGuDepthMask(blend_state ? GU_TRUE : GU_FALSE);
 	} else {
 		sceGuDisable(GU_DEPTH_TEST);
-		sceGuDepthMask(GU_TRUE);
+		sceGuDepthMask(GU_FALSE);
 	}
 	sceGuDisable(GU_TEXTURE_2D);
 	sceGuDisable(GU_ALPHA_TEST);
@@ -374,7 +375,7 @@ static void PSP_GUDrawFlatInternal(const pvr_vertex_t *vertices, int count,
 
 void PSP_GUDrawFlat(const pvr_vertex_t *vertices, int count)
 {
-	PSP_GUDrawFlatInternal(vertices, count, 0, -1, 0);
+	PSP_GUDrawFlatInternal(vertices, count, 0, -1, 1);
 }
 
 static void PSP_GUDrawIndexedInternal(const uint8_t *texture, int width,
@@ -427,6 +428,7 @@ static void PSP_GUDrawIndexedInternal(const uint8_t *texture, int width,
 	sceGuTexScale(1.0f, 1.0f);
 	sceGuTexOffset(0.0f, 0.0f);
 	sceGuTexWrap(wrap_s, wrap_t);
+	sceGuShadeModel(GU_SMOOTH);
 	sceGuTexFilter(filter == PVR_FILTER_BILINEAR ? GU_LINEAR : GU_NEAREST,
 		filter == PVR_FILTER_BILINEAR ? GU_LINEAR : GU_NEAREST);
 	sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
@@ -450,6 +452,7 @@ static void PSP_GUDrawIndexedInternal(const uint8_t *texture, int width,
 		sceGuDisable(GU_DEPTH_TEST);
 		sceGuDepthMask(GU_TRUE);
 	}
+	
 	sceGuDrawArray(triangle_strip ? GU_TRIANGLE_STRIP : GU_TRIANGLE_FAN,
 		GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF |
 		(transform_3d ? GU_TRANSFORM_3D : GU_TRANSFORM_2D),
