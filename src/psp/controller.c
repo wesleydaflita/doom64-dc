@@ -33,6 +33,8 @@ int I_GetControllerData(void)
 	last_joyy = (int)state.Ly - 128;
 	last_Ltrig = (state.Buttons & PSP_CTRL_LTRIGGER) ? 255 : 0;
 	last_Rtrig = (state.Buttons & PSP_CTRL_RTRIGGER) ? 255 : 0;
+	if (last_joyy == -128)
+		last_joyy = -127;
 
 	if (last_joyx > PSP_ANALOG_DEADZONE || last_joyx < -PSP_ANALOG_DEADZONE)
 		buttons |= (last_joyx & 0xff) << 8;

@@ -80,8 +80,14 @@ fixed_t FixedDivFloat(register fixed_t a, register fixed_t b)
 	float af = (float)a;
 	float bf = (float)b;
 	float cf = af / bf;
+	float result = cf * 65536.0f;
 
-	return (fixed_t)(cf * 65536.0f);
+	if (result >= 2147483648.0f)
+		return MAXINT;
+	if (result <= -2147483648.0f)
+		return MININT;
+
+	return (fixed_t)result;
 }
 
 /*

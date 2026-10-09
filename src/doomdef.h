@@ -114,6 +114,7 @@ typedef struct doom64_settings_s {
 extern doom64_settings_t __attribute__((aligned(32))) menu_settings;
 
 extern void M_ResetSettings(doom64_settings_t *s);
+extern void M_SaveSettings(void);
 extern int I_ReadPakSettings(doom64_settings_t *s);
 extern int I_SavePakSettings(doom64_settings_t *s);
 #define halfover1024 0.00048828125f
@@ -267,6 +268,7 @@ extern void P_StopElectricLoop(void);
 #define PFS_ERR_ID_FATAL 2
 
 extern int32_t Pak_Memory;
+extern int32_t Pak_Size;
 extern uint8_t *Pak_Data;
 
 typedef struct subsector_s subsector_t;
@@ -1333,8 +1335,9 @@ typedef struct {
 	int cursor_pos;
 } menudata_t;
 
+#define NUM_MENU_GAME 7
 extern menudata_t MenuData[8]; // 800A54F0
-extern menuitem_t Menu_Game[5]; // 8005AAA4
+extern menuitem_t Menu_Game[NUM_MENU_GAME]; // 8005AAA4
 extern int MenuAnimationTic; // 800a5570
 extern int cursorpos; // 800A5574
 //extern int m_vframe1; // 800A5578

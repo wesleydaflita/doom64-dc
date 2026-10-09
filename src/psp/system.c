@@ -25,6 +25,44 @@ boolean disabledrawing;
 atomic_int rdpmsg;
 int early_error = 1;
 
+static int ExitCallback(int arg1, int arg2, void *common)
+{
+	(void)arg1;
+	(void)arg2;
+	(void)common;
+	sceKernelExitGame();
+	return 0;
+}
+
+static int CallbackThread(SceSize args, void *argp)
+{
+	(void)args;
+	(void)argp;
+
+	int callback = sceKernelCreateCallback("Exit Callback", ExitCallback, NULL);
+	if (callback < 0)
+		I_Error("could not create PSP exit callback (%d)", callback);
+
+	int result = sceKernelRegisterExitCallback(callback);
+	if (result < 0)
+		I_Error("could not register PSP exit callback (%d)", result);
+
+	sceKernelSleepThreadCB();
+	return 0;
+}
+
+static void SetupCallbacks(void)
+{
+	SceUID thread = sceKernelCreateThread("Callback Thread", CallbackThread,
+		0x11, 0xFA0, PSP_THREAD_ATTR_USER, NULL);
+	if (thread < 0)
+		I_Error("could not create PSP callback thread (%d)", thread);
+
+	int result = sceKernelStartThread(thread, 0, NULL);
+	if (result < 0)
+		I_Error("could not start PSP callback thread (%d)", result);
+}
+
 void *memset(void *destination, int value, size_t size)
 {
 	uint8_t *bytes = destination;
@@ -41,6 +79,7 @@ int main(int argc, char **argv)
 {
 	(void)argc;
 	(void)argv;
+	SetupCallbacks();
 	D_DoomMain();
 	sceKernelExitGame();
 	return 0;

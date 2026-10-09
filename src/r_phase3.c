@@ -3002,8 +3002,10 @@ void R_RenderPSprites(void)
 			float u1, v1, u2, v2;
 			float x1, y1, x2, y2;
 			float sprite_uv_inset = halfover1024;
+			float sprite_top_crop = 0.0f;
 #ifdef __PSP__
 			sprite_uv_inset = 1.0f / 1024.0f;
+			sprite_top_crop = 1.0f / 1024.0f;
 #endif
 
 			uint8_t a1;
@@ -3296,7 +3298,7 @@ void R_RenderPSprites(void)
 			vert->x = x1;
 			vert->y = y1;
 			vert->u = u1 + sprite_uv_inset;
-			vert->v = v1 + sprite_uv_inset;
+			vert->v = v1 + sprite_uv_inset + sprite_top_crop;
 			vert++;
 
 			vert->x = x2;
@@ -3308,7 +3310,7 @@ void R_RenderPSprites(void)
 			vert->x = x2;
 			vert->y = y1;
 			vert->u = u2 - sprite_uv_inset;
-			vert->v = v1 + sprite_uv_inset;
+			vert->v = v1 + sprite_uv_inset + sprite_top_crop;
 
 #ifndef __PSP__
 			if (global_render_state.has_bump) {

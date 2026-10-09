@@ -148,6 +148,8 @@ char *ControlText[] =
 #define M_TXT100 "Rocker"
 
 #define M_TXT101 "WIREFRAME"
+#define M_TXT102 "Save Game"
+#define M_TXT103 "Load Game"
 
 static char *MenuText[] =
 	{
@@ -167,14 +169,18 @@ static char *MenuText[] =
 		M_TXT85, M_TXT86, M_TXT87,
 		M_TXT88, M_TXT89, M_TXT90, M_TXT91,
 		M_TXT92, M_TXT93, M_TXT94, M_TXT95, M_TXT96, M_TXT97, M_TXT98,
-		M_TXT99, M_TXT100, M_TXT101
+		M_TXT99, M_TXT100, M_TXT101, M_TXT102, M_TXT103
 	};
 
 #define NUM_MENU_TITLE 3
 menuitem_t Menu_Title[NUM_MENU_TITLE] =
 	{
 		{ 14, 115, 170 }, // New Game
+#ifdef __PSP__
+		{ 103, 115, 190 }, // Load Game
+#else
 		{ 3, 115, 190 }, // Password
+#endif
 		{ 11, 115, 210 }, // Options
 	};
 
@@ -235,6 +241,13 @@ menuitem_t Menu_Movement[NUM_MENU_MOVEMENT] =
 		{ 6, 82, 180 }, // Return
 	};
 
+#ifdef __PSP__
+#define NUM_MENU_VIDEO 2
+menuitem_t Menu_Video[NUM_MENU_VIDEO] = {
+	{ 9, 82, 60 }, // Brightness
+	{ 6, 82, 180 }, // Return
+};
+#else
 #define NUM_MENU_VIDEO 6
 menuitem_t Menu_Video[NUM_MENU_VIDEO] = {
 	{ 9, 82, 60 }, // Brightness
@@ -244,6 +257,7 @@ menuitem_t Menu_Video[NUM_MENU_VIDEO] = {
 	{ 96, 82, 160 }, // interpolate
 	{ 6, 82, 180 }, // Return
 };
+#endif
 
 #define NUM_MENU_DISPLAY 3
 menuitem_t Menu_Display[NUM_MENU_DISPLAY] =
@@ -263,14 +277,15 @@ menuitem_t Menu_StatusHUD[NUM_MENU_STATUSHUD] =
 		{ 6, 82, 180 }, // Return
 	};
 
-#define NUM_MENU_GAME 5
 menuitem_t Menu_Game[NUM_MENU_GAME] =
 	{
 		{ 3, 122, 60 }, // Password
-		{ 11, 122, 80 }, // Options
-		{ 4, 122, 100 }, // Main Menu
-		{ 5, 122, 120 }, // Restart Level
-		{ 22, 122, 140 }, // Features
+		{ 102, 122, 80 }, // Save Game
+		{ 103, 122, 100 }, // Load Game
+		{ 11, 122, 120 }, // Options
+		{ 4, 122, 140 }, // Main Menu
+		{ 5, 122, 160 }, // Restart Level
+		{ 22, 122, 180 }, // Features
 	};
 
 #define NUM_MENU_QUIT 2
@@ -311,7 +326,7 @@ menuitem_t Menu_CreateNote[NUM_MENU_CREATENOTE] =
 		{ 44, 110, 130 }, // Manage Pak
 	};
 
-#define NUM_MENU_FEATURES 11
+#define NUM_MENU_FEATURES 10
 menuitem_t Menu_Features[NUM_MENU_FEATURES] =
 	{
 		{ 23, 40, 50 }, // WARP TO LEVEL
@@ -324,7 +339,6 @@ menuitem_t Menu_Features[NUM_MENU_FEATURES] =
 		{ 35, 40, 120 }, // LOCK MONSTERS
 		{ 39, 40, 130 }, // MUSIC TEST
 		{ 69, 40, 140 }, // Doom 64 DC credits
-		{ 101, 40, 150 }, // WIREFRAME
 	};
 
 #define NUM_DOOM64DC_CREDITS 15
@@ -381,7 +395,7 @@ void M_ResetSettings(doom64_settings_t *s) {
 	s->HUDopacity = 255;
 	s->SfxVolume = 45;
 	s->MusVolume = 45;
-	s->brightness = MAX_BRIGHTNESS;
+	s->brightness = (MAX_BRIGHTNESS * 80) / 100;
 	s->enable_messages = 1;
 	s->M_SENSITIVITY = 27;
 	s->MotionBob = 16 << FRACBITS;
@@ -395,8 +409,16 @@ void M_ResetSettings(doom64_settings_t *s) {
 	s->FpsUncap = 1;
 	s->PlayDeadzone = 0;
 	s->Interpolate = 0;
+	s->Rumble = 1;
+	s->VmuDisplay = 0;
 	s->version = SETTINGS_SAVE_VERSION;
 	s->runintroduction = 0;
+}
+
+void M_SaveSettings(void)
+{
+	menu_settings.version = SETTINGS_SAVE_VERSION;
+	I_SavePakSettings(&menu_settings);
 }
 
 int MenuIdx = 0;
@@ -871,6 +893,46 @@ int M_MenuTicker(void)
 				}
 				break;
 
+			case 102: // Save Game
+				if (truebuttons) {
+					int saved_nextmap = nextmap;
+					uint8_t saved_password[sizeof(Passwordbuff)];
+
+					S_StartSound(NULL, sfx_pistol);
+					memcpy(saved_password, Passwordbuff, sizeof(saved_password));
+					nextmap = gamemap;
+					M_EncodePassword(Passwordbuff);
+					M_SaveMenuData();
+					MenuCall = M_SavePakDrawer;
+					MiniLoop(M_SavePakStart, M_SavePakStop, M_SavePakTicker,
+						M_SavePakDrawer);
+					M_RestoreMenuData(true);
+					nextmap = saved_nextmap;
+					memcpy(Passwordbuff, saved_password, sizeof(saved_password));
+					return ga_nothing;
+				}
+				break;
+
+			case 103: // Load Game
+				if (truebuttons) {
+					S_StartSound(NULL, sfx_pistol);
+					M_SaveMenuData();
+					if (I_ReadPakFile() != 0)
+						FilesUsed = -1;
+					MenuCall = M_LoadPakDrawer;
+					exit = MiniLoop(M_LoadPakStart, M_LoadPakStop,
+						M_LoadPakTicker, M_MenuGameDrawer);
+
+					if (exit == ga_warped) {
+						M_RestoreMenuData(false);
+						return exit;
+					}
+
+					M_RestoreMenuData(true);
+					return ga_nothing;
+				}
+				break;
+
 			case 6: // Return
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_pistol);
@@ -884,6 +946,7 @@ int M_MenuTicker(void)
 					if (menu_settings.MusVolume <= 100) {
 						S_SetMusicVolume(menu_settings.MusVolume);
 						if (menu_settings.MusVolume & 1) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -897,6 +960,7 @@ int M_MenuTicker(void)
 					} else {
 						S_SetMusicVolume(menu_settings.MusVolume);
 						if (menu_settings.MusVolume & 1) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -910,6 +974,7 @@ int M_MenuTicker(void)
 					if (menu_settings.SfxVolume <= 75) {
 						S_SetSoundVolume(menu_settings.SfxVolume);
 						if (menu_settings.SfxVolume & 1) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -923,6 +988,7 @@ int M_MenuTicker(void)
 					} else {
 						S_SetSoundVolume(menu_settings.SfxVolume);
 						if (menu_settings.SfxVolume & 1) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -936,6 +1002,7 @@ int M_MenuTicker(void)
 					if (menu_settings.brightness <= MAX_BRIGHTNESS) {
 						P_RefreshBrightness();
 						if (menu_settings.brightness & 1) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -949,6 +1016,7 @@ int M_MenuTicker(void)
 					} else {
 						P_RefreshBrightness();
 						if (menu_settings.brightness & 1) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -980,6 +1048,7 @@ int M_MenuTicker(void)
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_switch2);
 					menu_settings.Autorun ^= true;
+					M_SaveSettings();
 					return ga_nothing;
 				}
 				break;
@@ -1252,6 +1321,7 @@ int M_MenuTicker(void)
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_switch2);
 					menu_settings.enable_messages ^= true;
+					M_SaveSettings();
 					return ga_nothing;
 				}
 				break;
@@ -1261,6 +1331,7 @@ int M_MenuTicker(void)
 					menu_settings.HUDopacity += 4;
 					if (menu_settings.HUDopacity <= 255) {
 						if (menu_settings.HUDopacity & 4) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -1273,6 +1344,7 @@ int M_MenuTicker(void)
 						menu_settings.HUDopacity = 0;
 					} else {
 						if (menu_settings.HUDopacity & 4) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -1358,6 +1430,7 @@ int M_MenuTicker(void)
 					menu_settings.M_SENSITIVITY += 1;
 					if (menu_settings.M_SENSITIVITY <= 127) {
 						if (menu_settings.M_SENSITIVITY & 1) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -1370,6 +1443,7 @@ int M_MenuTicker(void)
 						menu_settings.M_SENSITIVITY = 0;
 					} else {
 						if (menu_settings.M_SENSITIVITY & 1) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -1385,6 +1459,7 @@ int M_MenuTicker(void)
 					} else {
 						menu_settings.VideoFilter = M_FILTER_BILINEAR;
 					}
+					M_SaveSettings();
 					force_filter_flush = 1;
 					return ga_nothing;
 				}
@@ -1412,6 +1487,7 @@ int M_MenuTicker(void)
 
 					if (menu_settings.MotionBob <= 0x100000) { // Maximum is 16 fixed point
 						if (menu_settings.MotionBob & 0x8000) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -1424,6 +1500,7 @@ int M_MenuTicker(void)
 						menu_settings.MotionBob = 0x0;
 					} else {
 						if (menu_settings.MotionBob & 0x8000) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -1435,6 +1512,7 @@ int M_MenuTicker(void)
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_switch2);
 					menu_settings.StoryText ^= true;
+					M_SaveSettings();
 					return ga_nothing;
 				}
 				break;
@@ -1443,6 +1521,7 @@ int M_MenuTicker(void)
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_switch2);
 					menu_settings.MapStats ^= true;
+					M_SaveSettings();
 					return ga_nothing;
 				}
 				break;
@@ -1469,6 +1548,7 @@ int M_MenuTicker(void)
 
 					if (menu_settings.HUDmargin <= 20) { // Maximum is 20
 						if (menu_settings.HUDmargin & 1) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -1482,6 +1562,7 @@ int M_MenuTicker(void)
 						menu_settings.HUDmargin = 0;
 					} else {
 						if (menu_settings.HUDmargin & 1) {
+							M_SaveSettings();
 							S_StartSound(NULL, sfx_secmove);
 							return ga_nothing;
 						}
@@ -1493,6 +1574,7 @@ int M_MenuTicker(void)
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_switch2);
 					menu_settings.ColoredHUD ^= true;
+					M_SaveSettings();
 					return ga_nothing;
 				}
 				break;
@@ -1597,6 +1679,7 @@ int M_MenuTicker(void)
 					S_StartSound(NULL, sfx_switch2);
 					global_render_state.quality = (global_render_state.quality + 1) % NUM_QUALITY;
 					menu_settings.Quality = (menu_settings.Quality + 1) % NUM_QUALITY;
+					M_SaveSettings();
 					global_render_state.context_change = 1;
 					return ga_nothing;
 				}
@@ -1607,6 +1690,7 @@ int M_MenuTicker(void)
 					S_StartSound(NULL, sfx_switch2);
 					global_render_state.fps_uncap = !global_render_state.fps_uncap;
 					menu_settings.FpsUncap = !menu_settings.FpsUncap;
+					M_SaveSettings();
 					return ga_nothing;
 				}
 				break;
@@ -1615,6 +1699,7 @@ int M_MenuTicker(void)
 				if (truebuttons) {
 					S_StartSound(NULL, sfx_switch2);
 					menu_settings.Interpolate = !menu_settings.Interpolate;
+					M_SaveSettings();
 					return ga_nothing;
 				}
 				break;
@@ -2058,6 +2143,8 @@ void M_DrawOverlay(void)
 	global_render_state.context_change = 1;
 }
 
+static char buffer[33];
+
 #ifndef __PSP__
 int M_ScreenTicker(void)
 {
@@ -2147,7 +2234,6 @@ int M_ScreenTicker(void)
 	return exit;
 }
 
-static char buffer[33];
 void M_ControllerPakDrawer(void)
 {
 	char *tmpbuf;
@@ -2201,6 +2287,8 @@ void M_ControllerPakDrawer(void)
 	}
 }
 
+#endif
+
 extern int32_t Pak_Size;
 void M_SavePakStart(void)
 {
@@ -2250,6 +2338,8 @@ void M_SavePakStop(int exit)
 		Z_Free(Pak_Data);
 		Pak_Data = NULL;
 	}
+	Pak_Size = 0;
+	FilesUsed = -1;
 }
 
 int M_SavePakTicker(void)
@@ -2349,6 +2439,8 @@ int M_SavePakTicker(void)
 					Z_Free(Pak_Data);
 					Pak_Data = NULL;
 				}
+				Pak_Size = 0;
+				FilesUsed = -1;
 			}
 		}
 	} else if ((ticon - last_ticon) >= 60) { // 2 * TICRATE
@@ -2363,16 +2455,27 @@ void M_SavePakDrawer(void)
 	int i;
 
 	I_ClearFrame();
+#ifndef __PSP__
 	// Fill borders with black
 	pvr_set_bg_color(0, 0, 0);
 	pvr_fog_table_color(0.0f, 0.0f, 0.0f, 0.0f);
+#endif
 	M_DrawBackground(EVIL, 128);
 
+#ifdef __PSP__
+	ST_DrawString(-1, 20, "Save Game", text_alpha | 0xc0000000, ST_ABOVE_OVL);
+#else
 	ST_DrawString(-1, 20, "VMU", text_alpha | 0xc0000000, ST_ABOVE_OVL);
+#endif
 
 	if (FilesUsed == -1) {
 		if (MenuAnimationTic & 2) {
+#ifdef __PSP__
+			ST_DrawString(-1, 100, "Save storage unavailable",
+				0xc00000ff, ST_ABOVE_OVL);
+#else
 			ST_DrawString(-1, 100, "VMU removed!", 0xc00000ff, ST_ABOVE_OVL);
+#endif
 			ST_DrawString(-1, 120, "Game cannot be saved.", 0xc00000ff, ST_ABOVE_OVL);
 		}
 
@@ -2412,6 +2515,11 @@ void M_LoadPakStart(void)
 
 	cursorpos = 0;
 	linepos = 0;
+
+	if (FilesUsed == -1 || !Pak_Data) {
+		M_FadeInStart();
+		return;
+	}
 
 	size = Pak_Size / 32;
 
@@ -2469,6 +2577,12 @@ int M_LoadPakTicker(void)
 
 	buttons = M_ButtonResponder(ticbuttons[0]);
 	oldbuttons = oldticbuttons[0] & 0xffff0000;
+
+	if (FilesUsed == -1 || !Pak_Data) {
+		if ((buttons != oldbuttons) && (buttons & PAD_START))
+			return ga_exit;
+		return ga_nothing;
+	}
 
 	if (!(buttons & ALL_JPAD)) {
 		f_m_vframe1 = 0;
@@ -2536,7 +2650,19 @@ void M_LoadPakDrawer(void)
 {
 	int i;
 
+#ifdef __PSP__
+	ST_DrawString(-1, 20, "Load Game", text_alpha | 0xc0000000, ST_ABOVE_OVL);
+#else
 	ST_DrawString(-1, 20, "VMU", text_alpha | 0xc0000000, ST_ABOVE_OVL);
+#endif
+
+	if (FilesUsed == -1 || !Pak_Data) {
+		ST_DrawString(-1, 100, "Save data unavailable",
+			text_alpha | 0xc0000000, ST_ABOVE_OVL);
+		ST_DrawString(-1, 210, "press \x8d to exit",
+			text_alpha | 0xffffff00, ST_ABOVE_OVL);
+		return;
+	}
 
 	for (i = linepos; i < (linepos + 6); i++) {
 		memset(buffer, 0, 33);
@@ -2563,6 +2689,7 @@ void M_LoadPakDrawer(void)
 	ST_DrawString(-1, 210, "press \x8c to load", text_alpha | 0xffffff00, ST_ABOVE_OVL);
 }
 
+#ifndef __PSP__
 int M_ControlPadTicker(void)
 {
 	static int last_f_gametic = 0;

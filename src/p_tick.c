@@ -110,7 +110,6 @@ void P_RunThinkers(void)
 =
 ==============
 */
-#define NUM_MENU_GAME 5
 void P_CheckCheats(void)
 {
 	unsigned int buttons;
@@ -408,6 +407,7 @@ void P_Stop(int exit) // 80021D58
 		I_WIPE_MeltScreen();
 
 	S_StopAll();
+	S_ResumeSound();
 
 	restore_plc = 0;
 	pause_changed = 0;

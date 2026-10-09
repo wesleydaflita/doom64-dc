@@ -380,11 +380,13 @@ void P_BuildMove(player_t *player) // 80022154
 			speed = 0;
 
 		if (cbutton->BT_LEFT & buttons) {
-			player->angleturn = angleturn[(int)player->f_turnheld +
-								(speed * SLOWTURNTICS)] << 17;
+			player->angleturn =
+				(angleturn[(int)player->f_turnheld +
+					(speed * SLOWTURNTICS)] * 13 / 10) << 17;
 		} else if (cbutton->BT_RIGHT & buttons) {
-			player->angleturn = -angleturn[(int)player->f_turnheld +
-								(speed * SLOWTURNTICS)] << 17;
+			player->angleturn =
+				-((angleturn[(int)player->f_turnheld +
+					(speed * SLOWTURNTICS)] * 13 / 10) << 17);
 		} else {
 			/* Analyze analog stick movement (left / right) */
 			sensitivity = (int)(((buttons & 0xff00) >> 8) << 24) >> 24;

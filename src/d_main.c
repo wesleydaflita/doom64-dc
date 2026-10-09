@@ -160,8 +160,11 @@ void D_DoomMain(void)
 
 	D_SplashScreen();
 
-	// give users a chance to delete old settings file first
+	// load saved settings if available, otherwise initialize and create a fresh settings file
 	M_ResetSettings(&menu_settings);
+	if (I_ReadPakSettings(&menu_settings) != 0) {
+		M_SaveSettings();
+	}
 	// refresh brightness after setting
 	P_RefreshBrightness();
 

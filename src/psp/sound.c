@@ -337,8 +337,6 @@ static void UnlockAudio(void)
 
 static void StopVoice(sound_voice_t *voice)
 {
-	if (voice->origin && voice->origin->sfx_chn == voice->handle)
-		voice->origin->sfx_chn = 0;
 	memset(voice, 0, sizeof(*voice));
 }
 
@@ -587,8 +585,6 @@ int S_StartSound(mobj_t *origin, int sound_id)
 	voices[selected].looping = sound_id == sfx_electric;
 	voices[selected].loop_start =
 		voices[selected].looping && sample->sample_count > 1713 ? 1713 : 0;
-	if (origin)
-		origin->sfx_chn = handle;
 	UnlockAudio();
 	return handle;
 }
@@ -647,7 +643,7 @@ void S_Init(void)
 	S_SetSoundVolume(menu_settings.SfxVolume);
 	S_SetMusicVolume(menu_settings.MusVolume);
 	audio_thread = sceKernelCreateThread("DoomAudio", AudioThread,
-		0x18, 0x10000, PSP_THREAD_ATTR_USER, NULL);
+		0x18, 0x10000, PSP_THREAD_ATTR_USER | PSP_THREAD_ATTR_VFPU, NULL);
 	if (audio_thread < 0)
 		I_Error("could not create PSP audio thread");
 	if (sceKernelStartThread(audio_thread, 0, NULL) < 0)
