@@ -143,6 +143,9 @@ void P_FlushAllCached(void) {
 	unsigned i, j;
 
 	P_FlushSprites();
+#ifdef __PSP__
+	PSP_GUFlushMirroredTextures();
+#endif
 
 	// clear previously cached pvr textures
 	for (i = 0; i < (unsigned)numtextures; i++) {

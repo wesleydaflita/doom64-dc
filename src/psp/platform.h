@@ -80,6 +80,7 @@ void PSP_GUDrawIndexed(const uint8_t *texture, int width, int height,
 	int palette, const pvr_vertex_t *vertices, int count);
 void *PSP_GUAllocTexture(size_t size);
 void PSP_GUFreeTexture(void *texture);
+void PSP_GUFlushMirroredTextures(void);
 void PSP_GULoadTexture(const void *source, void *texture, size_t size);
 int PSP_GUUntwiddle8(const uint8_t *source, uint8_t *texture,
 	int width, int height);
@@ -119,6 +120,9 @@ ssize_t PSP_FileSize(file_t file);
 #define PVR_SPECULAR_ENABLE 1
 #define PVR_TXRENV_DECAL 0
 #define PVR_UVFLIP_NONE 0
+#define PSP_GU_UV_MIRROR_U 0x01
+#define PSP_GU_UV_MIRROR_V 0x02
+#define PSP_GU_UV_WALL 0x04
 #define PVR_TXRLOAD_8BPP 0
 #define PVR_TXRLOAD_16BPP 1
 #define PVR_MIN_Z 0.0001f

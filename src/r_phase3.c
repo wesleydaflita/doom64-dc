@@ -1065,6 +1065,7 @@ void R_WallPrep(seg_t *seg)
 
 static float last_width_inv = recip64;
 static float last_height_inv = recip64;
+static int last_texture_width = 64;
 static pvr_poly_hdr_t *cur_wall_hdr;
 
 void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight,
@@ -1076,6 +1077,10 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight,
 	uint8_t *data;
 	vertex_t *v1;
 	vertex_t *v2;
+	pvr_poly_hdr_t *wall_draw_hdr;
+#ifdef __PSP__
+	pvr_poly_hdr_t psp_wall_hdr;
+#endif
 	int cms, cmt;
 	int wshift, hshift;
 	int texnum = (texture >> 4) - firsttex;
@@ -1085,8 +1090,7 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight,
 	uint32_t tl_col = R_SectorLightColor(tdc_col, ll);
 	uint32_t bl_col = R_SectorLightColor(bdc_col, ll);
 
-	// [GEC] Prevents errors in textures in S coordinates
-	int curTextureoffset = (seg->sidedef->textureoffset + seg->offset) & (127 << FRACBITS);
+	int curTextureoffset = seg->sidedef->textureoffset + seg->offset;
 
 	global_render_state.in_floor = 0;
 	global_render_state.in_things = 0;
@@ -1143,6 +1147,7 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight,
 
 			wshift = SwapShort(((textureN64_t *)data)->wshift);
 			hshift = SwapShort(((textureN64_t *)data)->hshift);
+			last_texture_width = 1 << wshift;
 			last_width_inv = 1.0f / (float)(1 << wshift);
 			last_height_inv = 1.0f / (float)(1 << hshift);
 
@@ -1192,6 +1197,18 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight,
 
 			global_render_state.context_change = 1;
 		}
+
+		curTextureoffset &= (last_texture_width - 1) << FRACBITS;
+		wall_draw_hdr = cur_wall_hdr;
+#ifdef __PSP__
+		psp_wall_hdr = *cur_wall_hdr;
+		psp_wall_hdr.context.txr.uv_flip = PSP_GU_UV_WALL;
+		if (flags & ML_HMIRROR)
+			psp_wall_hdr.context.txr.uv_flip |= PSP_GU_UV_MIRROR_U;
+		if (flags & ML_VMIRROR)
+			psp_wall_hdr.context.txr.uv_flip |= PSP_GU_UV_MIRROR_V;
+		wall_draw_hdr = &psp_wall_hdr;
+#endif
 
 		int list = (do_pt) ? PVR_LIST_PT_POLY : PVR_LIST_TR_POLY;
 
@@ -1287,7 +1304,7 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight,
 				float ttu1 = tu1;
 
 				for (j = 0; j < xsteps; j++) {
-					init_poly(list, &next_poly, cur_wall_hdr, 4);
+					init_poly(list, &next_poly, wall_draw_hdr, 4);
 
 					dV[0]->v->x = dV[1]->v->x = tx1;
 					dV[0]->v->z = dV[1]->v->z = tz1;
@@ -1350,7 +1367,7 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight,
 				uint32_t lcol = color_lerp(lerpstep, tdc_col, bdc_col);
 				uint32_t llcol = color_lerp(lerpstep, tl_col, bl_col);
 
-				init_poly(list, &next_poly, cur_wall_hdr, 4);
+				init_poly(list, &next_poly, wall_draw_hdr, 4);
 
 				dV[0]->v->x = dV[1]->v->x = x1;
 				dV[0]->v->z = dV[1]->v->z = z1;
@@ -1403,7 +1420,7 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight,
 			float ttu1 = tu1;
 
 			for (i = 0; i < steps; i++) {
-				init_poly(list, &next_poly, cur_wall_hdr, 4);
+				init_poly(list, &next_poly, wall_draw_hdr, 4);
 
 				dV[0]->v->x = dV[1]->v->x = tx1;
 				dV[0]->v->z = dV[1]->v->z = tz1;
@@ -1434,7 +1451,7 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight,
 			}
 		} else {
 regular_wall:
-			init_poly(list, &next_poly, cur_wall_hdr, 4);
+			init_poly(list, &next_poly, wall_draw_hdr, 4);
 
 			dV[0]->v->x = dV[1]->v->x = x1;
 			dV[0]->v->z = dV[1]->v->z = z1;
@@ -1601,6 +1618,8 @@ static pvr_vertex_t  dv0;
 static pvr_vertex_t  ipv[3];
 static pvr_vertex_t  spv[5];
 static pvr_poly_hdr_t *cur_plane_hdr;
+static float plane_width_inv = recip64;
+static float plane_height_inv = recip64;
 
 // PVR texture memory pointers for texture[texnum][palnum]
 extern pvr_ptr_t **pvr_texture_ptrs;
@@ -1709,8 +1728,10 @@ void R_RenderPlane(leaf_t *leaf, int numverts, float zpos, int texture,
 	dv0.x = ((float)(vrt->x >> FRACBITS));
 	dv0.y = zpos;
 	dv0.z = -((float)(vrt->y >> FRACBITS));
-	dv0.u = (float)(((vrt->x + xpos) & 0x3f0000U) >> FRACBITS) * recip64;
-	dv0.v = -((float)(((vrt->y + ypos) & 0x3f0000U) >> FRACBITS)) * recip64;
+	dv0.u = (float)(((vrt->x + xpos) & 0x3f0000U) >> FRACBITS) *
+		plane_width_inv;
+	dv0.v = -((float)(((vrt->y + ypos) & 0x3f0000U) >> FRACBITS)) *
+		plane_height_inv;
 	dv0.argb = new_color;
 	dv0.oargb = floor_lit_color;
 
@@ -1797,18 +1818,18 @@ void R_RenderPlane(leaf_t *leaf, int numverts, float zpos, int texture,
 
 			spv[spv12].x = s12->x;
 			spv[spv12].z = -s12->y;
-			spv[spv12].u = (s12->x + scaled_xpos) * recip64;
-			spv[spv12].v = -((s12->y + scaled_ypos) * recip64);
+			spv[spv12].u = (s12->x + scaled_xpos) * plane_width_inv;
+			spv[spv12].v = -((s12->y + scaled_ypos) * plane_height_inv);
 
 			spv[spv23].x = s23->x;
 			spv[spv23].z = -s23->y;
-			spv[spv23].u = (s23->x + scaled_xpos) * recip64;
-			spv[spv23].v = -((s23->y + scaled_ypos) * recip64);
+			spv[spv23].u = (s23->x + scaled_xpos) * plane_width_inv;
+			spv[spv23].v = -((s23->y + scaled_ypos) * plane_height_inv);
 
 			spv[spv31].x = s31->x;
 			spv[spv31].z = -s31->y;
-			spv[spv31].u = (s31->x + scaled_xpos) * recip64;
-			spv[spv31].v = -((s31->y + scaled_ypos) * recip64);
+			spv[spv31].u = (s31->x + scaled_xpos) * plane_width_inv;
+			spv[spv31].v = -((s31->y + scaled_ypos) * plane_height_inv);
 
 			/////////////////////////////////
 
@@ -1831,8 +1852,8 @@ void R_RenderPlane(leaf_t *leaf, int numverts, float zpos, int texture,
 			dV[2]->x = i1x;
 			dV[2]->y = zpos;
 			dV[2]->z = -i1y;
-			dV[2]->u = (i1x + scaled_xpos) * recip64;
-			dV[2]->v = -(i1y + scaled_ypos) * recip64;
+			dV[2]->u = (i1x + scaled_xpos) * plane_width_inv;
+			dV[2]->v = -(i1y + scaled_ypos) * plane_height_inv;
 			dV[2]->argb = new_color;
 			dV[2]->oargb = floor_lit_color;
 
@@ -1859,8 +1880,8 @@ void R_RenderPlane(leaf_t *leaf, int numverts, float zpos, int texture,
 			dV[2]->x = i2x;
 			dV[2]->y = zpos;
 			dV[2]->z = -i2y;
-			dV[2]->u = (i2x + scaled_xpos) * recip64;
-			dV[2]->v = -(i2y + scaled_ypos) * recip64;
+			dV[2]->u = (i2x + scaled_xpos) * plane_width_inv;
+			dV[2]->v = -(i2y + scaled_ypos) * plane_height_inv;
 			dV[2]->argb = new_color;
 			dV[2]->oargb = floor_lit_color;
 
@@ -1887,8 +1908,8 @@ void R_RenderPlane(leaf_t *leaf, int numverts, float zpos, int texture,
 			dV[2]->x = i3x;
 			dV[2]->y = zpos;
 			dV[2]->z = -i3y;
-			dV[2]->u = (i3x + scaled_xpos) * recip64;
-			dV[2]->v = -(i3y + scaled_ypos) * recip64;
+			dV[2]->u = (i3x + scaled_xpos) * plane_width_inv;
+			dV[2]->v = -(i3y + scaled_ypos) * plane_height_inv;
 			dV[2]->argb = new_color;
 			dV[2]->oargb = floor_lit_color;
 
@@ -1953,18 +1974,18 @@ void R_RenderPlane(leaf_t *leaf, int numverts, float zpos, int texture,
 
 				ipv[0].x = ix[0];
 				ipv[0].z = -iy[0];
-				ipv[0].u = (ix[0] + scaled_xpos) * recip64;
-				ipv[0].v = -((iy[0] + scaled_ypos) * recip64);
+				ipv[0].u = (ix[0] + scaled_xpos) * plane_width_inv;
+				ipv[0].v = -((iy[0] + scaled_ypos) * plane_height_inv);
 
 				ipv[1].x = ix[1];
 				ipv[1].z = -iy[1];
-				ipv[1].u = (ix[1] + scaled_xpos) * recip64;
-				ipv[1].v = -((iy[1] + scaled_ypos) * recip64);
+				ipv[1].u = (ix[1] + scaled_xpos) * plane_width_inv;
+				ipv[1].v = -((iy[1] + scaled_ypos) * plane_height_inv);
 
 				ipv[2].x = ix[2];
 				ipv[2].z = -iy[2];
-				ipv[2].u = (ix[2] + scaled_xpos) * recip64;
-				ipv[2].v = -((iy[2] + scaled_ypos) * recip64);
+				ipv[2].u = (ix[2] + scaled_xpos) * plane_width_inv;
+				ipv[2].v = -((iy[2] + scaled_ypos) * plane_height_inv);
 
 				s12 = &subsplits[s00 + spv12];
 				s23 = &subsplits[s00 + spv23];
@@ -1974,28 +1995,28 @@ void R_RenderPlane(leaf_t *leaf, int numverts, float zpos, int texture,
 
 				spv[spv12].x = s12->x;
 				spv[spv12].z = -s12->y;
-				spv[spv12].u = (s12->x + scaled_xpos) * recip64;
-				spv[spv12].v = -((s12->y + scaled_ypos) * recip64);
+				spv[spv12].u = (s12->x + scaled_xpos) * plane_width_inv;
+				spv[spv12].v = -((s12->y + scaled_ypos) * plane_height_inv);
 
 				spv[spv23].x = s23->x;
 				spv[spv23].z = -s23->y;
-				spv[spv23].u = (s23->x + scaled_xpos) * recip64;
-				spv[spv23].v = -((s23->y + scaled_ypos) * recip64);
+				spv[spv23].u = (s23->x + scaled_xpos) * plane_width_inv;
+				spv[spv23].v = -((s23->y + scaled_ypos) * plane_height_inv);
 
 				spv[spv31].x = s31->x;
 				spv[spv31].z = -s31->y;
-				spv[spv31].u = (s31->x + scaled_xpos) * recip64;
-				spv[spv31].v = -((s31->y + scaled_ypos) * recip64);
+				spv[spv31].u = (s31->x + scaled_xpos) * plane_width_inv;
+				spv[spv31].v = -((s31->y + scaled_ypos) * plane_height_inv);
 
 				spv[spv30].x = s30->x;
 				spv[spv30].z = -s30->y;
-				spv[spv30].u = (s30->x + scaled_xpos) * recip64;
-				spv[spv30].v = -((s30->y + scaled_ypos) * recip64);
+				spv[spv30].u = (s30->x + scaled_xpos) * plane_width_inv;
+				spv[spv30].v = -((s30->y + scaled_ypos) * plane_height_inv);
 
 				spv[spv10].x = s10->x;
 				spv[spv10].z = -s10->y;
-				spv[spv10].u = (s10->x + scaled_xpos) * recip64;
-				spv[spv10].v = -((s10->y + scaled_ypos) * recip64);
+				spv[spv10].u = (s10->x + scaled_xpos) * plane_width_inv;
+				spv[spv10].v = -((s10->y + scaled_ypos) * plane_height_inv);
 
 				/////////////////////////////////
 
@@ -2208,16 +2229,16 @@ too_far_away:
 		dV[1]->x = (float)(vrt1->x >> FRACBITS);
 		dV[1]->y = zpos;
 		dV[1]->z = -((float)(vrt1->y >> FRACBITS));
-		dV[1]->u = (float)((vrt1->x >> FRACBITS) + scaled_xpos) * recip64;
-		dV[1]->v = -(float)((vrt1->y >> FRACBITS) + scaled_ypos) * recip64;
+		dV[1]->u = (float)((vrt1->x >> FRACBITS) + scaled_xpos) * plane_width_inv;
+		dV[1]->v = -(float)((vrt1->y >> FRACBITS) + scaled_ypos) * plane_height_inv;
 		dV[1]->argb = new_color;
 		dV[1]->oargb = floor_lit_color;
 
 		dV[2]->x = (float)(vrt2->x >> FRACBITS);
 		dV[2]->y = zpos;
 		dV[2]->z = -((float)(vrt2->y >> FRACBITS));
-		dV[2]->u = (float)((vrt2->x >> FRACBITS) + scaled_xpos) * recip64;
-		dV[2]->v = -(float)((vrt2->y >> FRACBITS) + scaled_ypos) * recip64;
+		dV[2]->u = (float)((vrt2->x >> FRACBITS) + scaled_xpos) * plane_width_inv;
+		dV[2]->v = -(float)((vrt2->y >> FRACBITS) + scaled_ypos) * plane_height_inv;
 		dV[2]->argb = new_color;
 		dV[2]->oargb = floor_lit_color;
 
@@ -2248,13 +2269,13 @@ too_far_away:
 				// vrt1 and vrt3 are duplicated
 				spv[0].x = (float)(vrt1->x >> FRACBITS);
 				spv[0].z = -((float)(vrt1->y >> FRACBITS));
-				spv[0].u = (float)((vrt1->x >> FRACBITS) + scaled_xpos) * recip64;
-				spv[0].v = -(float)((vrt1->y >> FRACBITS) + scaled_ypos) * recip64;
+				spv[0].u = (float)((vrt1->x >> FRACBITS) + scaled_xpos) * plane_width_inv;
+				spv[0].v = -(float)((vrt1->y >> FRACBITS) + scaled_ypos) * plane_height_inv;
 
 				spv[1].x = (float)(vrt3->x >> FRACBITS);
 				spv[1].z = -((float)(vrt3->y >> FRACBITS));
-				spv[1].u = (float)((vrt3->x >> FRACBITS) + scaled_xpos) * recip64;
-				spv[1].v = -(float)((vrt3->y >> FRACBITS) + scaled_ypos) * recip64;
+				spv[1].u = (float)((vrt3->x >> FRACBITS) + scaled_xpos) * plane_width_inv;
+				spv[1].v = -(float)((vrt3->y >> FRACBITS) + scaled_ypos) * plane_height_inv;
 
 				/////////////////////////////////
 
@@ -2277,8 +2298,8 @@ too_far_away:
 				dV[2]->x = (float)(vrt2->x >> FRACBITS);
 				dV[2]->y = zpos;
 				dV[2]->z = -((float)(vrt2->y >> FRACBITS));
-				dV[2]->u = (float)((vrt2->x >> FRACBITS) + scaled_xpos) * recip64;
-				dV[2]->v = -(float)((vrt2->y >> FRACBITS) + scaled_ypos) * recip64;
+				dV[2]->u = (float)((vrt2->x >> FRACBITS) + scaled_xpos) * plane_width_inv;
+				dV[2]->v = -(float)((vrt2->y >> FRACBITS) + scaled_ypos) * plane_height_inv;
 				dV[2]->argb = new_color;
 				dV[2]->oargb = floor_lit_color;
 
@@ -2325,24 +2346,24 @@ too_far_away:
 				dV[1]->x = (float)(vrt1->x >> FRACBITS);
 				dV[1]->y = zpos;
 				dV[1]->z = -((float)(vrt1->y >> FRACBITS));
-				dV[1]->u = (float)((vrt1->x >> FRACBITS) + scaled_xpos) * recip64;
-				dV[1]->v = -(float)((vrt1->y >> FRACBITS) + scaled_ypos) * recip64;
+				dV[1]->u = (float)((vrt1->x >> FRACBITS) + scaled_xpos) * plane_width_inv;
+				dV[1]->v = -(float)((vrt1->y >> FRACBITS) + scaled_ypos) * plane_height_inv;
 				dV[1]->argb = new_color;
 				dV[1]->oargb = floor_lit_color;
 
 				dV[2]->x = (float)(vrt2->x >> FRACBITS);
 				dV[2]->y = zpos;
 				dV[2]->z = -((float)(vrt2->y >> FRACBITS));
-				dV[2]->u = (float)((vrt2->x >> FRACBITS) + scaled_xpos) * recip64;
-				dV[2]->v = -(float)((vrt2->y >> FRACBITS) + scaled_ypos) * recip64;
+				dV[2]->u = (float)((vrt2->x >> FRACBITS) + scaled_xpos) * plane_width_inv;
+				dV[2]->v = -(float)((vrt2->y >> FRACBITS) + scaled_ypos) * plane_height_inv;
 				dV[2]->argb = new_color;
 				dV[2]->oargb = floor_lit_color;
 
 				dV[3]->x = (float)(vrt3->x >> FRACBITS);
 				dV[3]->y = zpos;
 				dV[3]->z = -((float)(vrt3->y >> FRACBITS));
-				dV[3]->u = (float)((vrt3->x >> FRACBITS) + scaled_xpos) * recip64;
-				dV[3]->v = -(float)((vrt3->y >> FRACBITS) + scaled_ypos) * recip64;
+				dV[3]->u = (float)((vrt3->x >> FRACBITS) + scaled_xpos) * plane_width_inv;
+				dV[3]->v = -(float)((vrt3->y >> FRACBITS) + scaled_ypos) * plane_height_inv;
 				dV[3]->argb = new_color;
 				dV[3]->oargb = floor_lit_color;
 
@@ -2980,6 +3001,10 @@ void R_RenderPSprites(void)
 			pvr_vertex_t *vert = wepn_verts;
 			float u1, v1, u2, v2;
 			float x1, y1, x2, y2;
+			float sprite_uv_inset = halfover1024;
+#ifdef __PSP__
+			sprite_uv_inset = 1.0f / 1024.0f;
+#endif
 
 			uint8_t a1;
 
@@ -3237,6 +3262,7 @@ void R_RenderPSprites(void)
 			x2 = x1 + ((float)width2 * RES_RATIO);
 			y2 = y1 + ((float)height * RES_RATIO);
 
+#ifndef __PSP__
 			if (lump == 935) {
 				u1 = 0.0f * recip64;
 				v1 = 0.0f * recip64;
@@ -3257,31 +3283,32 @@ void R_RenderPSprites(void)
 				u2 = 40.0f * recip64;
 				v2 = 62.0f * recip64;
 			}
+#endif
 
 			// pull in each side of sprite by half pixel
 			// fix for filtering 'crud' around the edge due to lack of padding
 			vert->x = x1;
 			vert->y = y2;
-			vert->u = u1 + halfover1024;
-			vert->v = v2 - halfover1024;
+			vert->u = u1 + sprite_uv_inset;
+			vert->v = v2 - sprite_uv_inset;
 			vert++;
 
 			vert->x = x1;
 			vert->y = y1;
-			vert->u = u1 + halfover1024;
-			vert->v = v1 + halfover1024;
+			vert->u = u1 + sprite_uv_inset;
+			vert->v = v1 + sprite_uv_inset;
 			vert++;
 
 			vert->x = x2;
 			vert->y = y2;
-			vert->u = u2 - halfover1024;
-			vert->v = v2 - halfover1024;
+			vert->u = u2 - sprite_uv_inset;
+			vert->v = v2 - sprite_uv_inset;
 			vert++;
 
 			vert->x = x2;
 			vert->y = y1;
-			vert->u = u2 - halfover1024;
-			vert->v = v1 + halfover1024;
+			vert->u = u2 - sprite_uv_inset;
+			vert->v = v1 + sprite_uv_inset;
 
 #ifndef __PSP__
 			if (global_render_state.has_bump) {

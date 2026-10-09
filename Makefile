@@ -8,7 +8,7 @@ OBJS := $(PSP_SOURCES:.c=.o)
 
 CFLAGS = -O2 -G0 -Wall -Wextra -std=gnu17 -D__PSP__ -Isrc -Isrc/psp
 ASFLAGS = $(CFLAGS)
-LIBS = -lpspgu -lpspdisplay -lpspctrl -lm
+LIBS = -lpspgu -lpspdisplay -lpspctrl -lm -lpspaudio
 
 BUILD_PRX = 1
 PSP_FW_VERSION = 660

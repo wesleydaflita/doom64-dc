@@ -28,7 +28,15 @@ typedef struct {
 	float x, y, z;
 } gu_texture_vertex_t;
 
+typedef struct mirrored_texture_s {
+	const void *source;
+	void *texture;
+	int width, height, format, mirror_flags;
+	struct mirrored_texture_s *next;
+} mirrored_texture_t;
+
 static uint16_t __attribute__((aligned(16))) gu_palette[1024];
+static mirrored_texture_t *mirrored_textures;
 
 static int PSP_NormalizeTextureSize(int *width, int *height)
 {
@@ -65,6 +73,83 @@ void *PSP_GUAllocTexture(size_t size)
 void PSP_GUFreeTexture(void *texture)
 {
 	free(texture);
+}
+
+void PSP_GUFlushMirroredTextures(void)
+{
+	mirrored_texture_t *entry = mirrored_textures;
+
+	while (entry) {
+		mirrored_texture_t *next = entry->next;
+		PSP_GUFreeTexture(entry->texture);
+		free(entry);
+		entry = next;
+	}
+	mirrored_textures = NULL;
+}
+
+static const void *PSP_GUMirroredTexture(const void *source, int width,
+		int height, int format, int mirror_flags, int *output_width,
+		int *output_height)
+{
+	const int mirror_u = (mirror_flags & PSP_GU_UV_MIRROR_U) != 0;
+	const int mirror_v = (mirror_flags & PSP_GU_UV_MIRROR_V) != 0;
+	const size_t pixel_size =
+		(format & PVR_TXRFMT_PAL8BPP) ? sizeof(uint8_t) : sizeof(uint16_t);
+	mirrored_texture_t *entry;
+	uint8_t *output;
+
+	*output_width = width;
+	*output_height = height;
+	if (!mirror_u && !mirror_v)
+		return source;
+
+	*output_width = width * (mirror_u ? 2 : 1);
+	*output_height = height * (mirror_v ? 2 : 1);
+	if (*output_width > 512 || *output_height > 512)
+		__I_Error(__func__, "mirrored wall texture exceeds GU dimensions");
+
+	for (entry = mirrored_textures; entry; entry = entry->next) {
+		if (entry->source == source && entry->width == width &&
+				entry->height == height && entry->format == format &&
+				entry->mirror_flags == mirror_flags)
+			return entry->texture;
+	}
+
+	entry = malloc(sizeof(*entry));
+	output = PSP_GUAllocTexture((size_t)*output_width * *output_height *
+		pixel_size);
+	if (!entry || !output) {
+		free(entry);
+		PSP_GUFreeTexture(output);
+		__I_Error(__func__, "could not allocate mirrored wall texture");
+	}
+
+	for (int y = 0; y < *output_height; y++) {
+		int source_y = mirror_v && y >= height ?
+			*output_height - 1 - y : y;
+		for (int x = 0; x < *output_width; x++) {
+			int source_x = mirror_u && x >= width ?
+				*output_width - 1 - x : x;
+			size_t source_index = (size_t)source_y * width + source_x;
+			size_t output_index = (size_t)y * *output_width + x;
+			memcpy(output + output_index * pixel_size,
+				(const uint8_t *)source + source_index * pixel_size,
+				pixel_size);
+		}
+	}
+
+	sceKernelDcacheWritebackInvalidateRange(output,
+		(size_t)*output_width * *output_height * pixel_size);
+	entry->source = source;
+	entry->texture = output;
+	entry->width = width;
+	entry->height = height;
+	entry->format = format;
+	entry->mirror_flags = mirror_flags;
+	entry->next = mirrored_textures;
+	mirrored_textures = entry;
+	return output;
 }
 
 void PSP_GULoadTexture(const void *source, void *texture, size_t size)
@@ -362,8 +447,7 @@ static void PSP_GUDrawFlatInternal(const pvr_vertex_t *vertices, int count,
 	}
 	if (blend_state) {
 		sceGuEnable(GU_BLEND);
-		sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA,
-			0, 0);
+		 sceGuBlendFunc(GU_ADD, GU_ONE_MINUS_SRC_ALPHA, GU_FIX, 0, 0xFFFFFFFF);
 	} else {
 		sceGuDisable(GU_BLEND);
 	}
@@ -425,6 +509,8 @@ static void PSP_GUDrawIndexedInternal(const uint8_t *texture, int width,
 	sceGuClutLoad(32, gu_palette + (palette * 256));
 	sceGuTexMode(GU_PSM_T8, 0, 0, GU_FALSE);
 	sceGuTexImage(0, width, height, width, texture);
+	sceGuTexFlush();
+	sceGuTexSync();
 	sceGuTexScale(1.0f, 1.0f);
 	sceGuTexOffset(0.0f, 0.0f);
 	sceGuTexWrap(wrap_s, wrap_t);
@@ -474,7 +560,7 @@ static void PSP_GUDraw5551Internal(const uint16_t *texture, int width,
 {
 	gu_texture_vertex_t *draw_vertices;
 
-	if (!texture || !vertices || count < 3 || count > 5)
+	if (!texture || !vertices || count < 3 || count > MAX_POLY)
 		return;
 
 	PSP_NormalizeTextureSize(&width, &height);
@@ -514,6 +600,8 @@ static void PSP_GUDraw5551Internal(const uint16_t *texture, int width,
 		width * height * sizeof(*texture));
 	sceGuTexMode(GU_PSM_5551, 0, 0, GU_FALSE);
 	sceGuTexImage(0, width, height, width, texture);
+	sceGuTexFlush();
+	sceGuTexSync();
 	sceGuTexScale(1.0f, 1.0f);
 	sceGuTexOffset(0.0f, 0.0f);
 	sceGuTexWrap(wrap_s, wrap_t);
@@ -618,6 +706,9 @@ void PSP_GUDrawWorldPoly(const pvr_poly_hdr_t *header,
 	const pvr_poly_cxt_t *context;
 	pvr_vertex_t ordered[5];
 	pvr_vertex_t clipped[MAX_POLY];
+	pvr_vertex_t wall_vertices[MAX_POLY];
+	pvr_poly_hdr_t wall_header;
+	int texture_width, texture_height;
 	int translucent, alpha_test;
 
 	if (!header || !vertices || count < 3 || count > 5)
@@ -637,11 +728,44 @@ vertices = clipped;
 		PSP_GUDrawFlatInternal(vertices, count, 1, translucent, 0);
 		return;
 	}
-	PSP_GUDrawIndexedInternal(context->txr.base,
-		context->txr.width, context->txr.height,
-		context->txr.palette, vertices, count, 1, translucent,
-		alpha_test, context->txr.filter, 0,
-		context->txr.wrap_s, context->txr.wrap_t, 0);
+	if (context->txr.uv_flip & PSP_GU_UV_WALL) {
+		texture_width = context->txr.width;
+		texture_height = context->txr.height;
+		PSP_NormalizeTextureSize(&texture_width, &texture_height);
+		wall_header = *header;
+		int mirror_flags = context->txr.uv_flip &
+			(PSP_GU_UV_MIRROR_U | PSP_GU_UV_MIRROR_V);
+		wall_header.context.txr.base = (void *)PSP_GUMirroredTexture(
+			context->txr.base, texture_width, texture_height,
+			context->txr.format, mirror_flags,
+			&wall_header.context.txr.width,
+			&wall_header.context.txr.height);
+		context = &wall_header.context;
+		if (mirror_flags) {
+			float u_scale = ((float)wall_header.context.txr.width /
+				texture_width) * 0.25f;
+			float v_scale = ((float)wall_header.context.txr.height /
+				texture_height) * 0.25f;
+			for (int i = 0; i < count; i++) {
+				wall_vertices[i] = vertices[i];
+				wall_vertices[i].u *= u_scale;
+				wall_vertices[i].v *= v_scale;
+			}
+			vertices = wall_vertices;
+		}
+	}
+	if (context->txr.format & PVR_TXRFMT_PAL8BPP) {
+		PSP_GUDrawIndexedInternal(context->txr.base,
+			context->txr.width, context->txr.height,
+			context->txr.palette, vertices, count, 1, translucent,
+			alpha_test, context->txr.filter, 0,
+			context->txr.wrap_s, context->txr.wrap_t, 0);
+	} else {
+		PSP_GUDraw5551Internal(context->txr.base,
+			context->txr.width, context->txr.height, vertices, count,
+			1, translucent, alpha_test, context->txr.filter, 0,
+			context->txr.wrap_s, context->txr.wrap_t, 0);
+	}
 }
 
 void PSP_GUDrawOverlayPoly(const pvr_poly_hdr_t *header,

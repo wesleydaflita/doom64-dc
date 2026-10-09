@@ -75,6 +75,7 @@ void __attribute__((noreturn)) __I_Error(const char *funcname, char *error, ...)
 	va_start(args, error);
 	vsnprintf(message, sizeof(message), error, args);
 	va_end(args);
+	sceKernelPrintf("%s: %s\n", funcname, message);
 	pspDebugScreenInit();
 	pspDebugScreenPrintf("%s: %s\n", funcname, message);
 	sceKernelExitGame();
