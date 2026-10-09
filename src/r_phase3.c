@@ -1198,7 +1198,10 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight,
 			global_render_state.context_change = 1;
 		}
 
-		curTextureoffset &= (last_texture_width - 1) << FRACBITS;
+		int texture_wrap_width = last_texture_width;
+		if (flags & ML_HMIRROR)
+			texture_wrap_width *= 2;
+		curTextureoffset &= (texture_wrap_width - 1) << FRACBITS;
 		wall_draw_hdr = cur_wall_hdr;
 #ifdef __PSP__
 		psp_wall_hdr = *cur_wall_hdr;

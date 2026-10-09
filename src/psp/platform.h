@@ -75,6 +75,8 @@ void PSP_GUDrawOverlayPoly(const pvr_poly_hdr_t *header,
 	const pvr_vertex_t *vertices, int count);
 void PSP_GUDraw5551(const uint16_t *texture, int width, int height,
 	const pvr_vertex_t *vertices, int count);
+void PSP_GUDrawPanoramicSky(const uint16_t *texture, int width, int height,
+	const pvr_vertex_t *vertices, int count);
 void PSP_GUSetPaletteEntry(int index, uint16_t color);
 void PSP_GUDrawIndexed(const uint8_t *texture, int width, int height,
 	int palette, const pvr_vertex_t *vertices, int count);
@@ -123,6 +125,7 @@ ssize_t PSP_FileSize(file_t file);
 #define PSP_GU_UV_MIRROR_U 0x01
 #define PSP_GU_UV_MIRROR_V 0x02
 #define PSP_GU_UV_WALL 0x04
+#define PSP_GU_FAR_Z 3808.0f
 #define PVR_TXRLOAD_8BPP 0
 #define PVR_TXRLOAD_16BPP 1
 #define PVR_MIN_Z 0.0001f

@@ -11,7 +11,7 @@
 #define PSP_BUFFER_WIDTH 512
 #define PSP_GU_LIST_SIZE (512 * 1024)
 #define NEAR_Z 8.0f
-#define GUARD_K  1.25f   
+#define GUARD_K  1.25f
 #define MAX_POLY 16
 
 static unsigned int __attribute__((aligned(16))) gu_list[PSP_GU_LIST_SIZE];
@@ -313,7 +313,7 @@ void PSP_GUFlatContext(pvr_poly_cxt_t *context, int list)
 int PSP_GUInit(void)
 {
 	const float near_plane = 8.0f;
-	const float far_plane = 3808.0f;
+	const float far_plane = PSP_GU_FAR_Z;
 	const float depth_scale =
 		(far_plane + near_plane) / (far_plane - near_plane);
 	const float depth_offset =
@@ -496,8 +496,8 @@ static void PSP_GUDrawIndexedInternal(const uint8_t *texture, int width,
 			draw_vertices[i].z = vertices[i].z;
 		} else {
 			draw_vertices[i].x = floorf(vertices[i].x * (PSP_FRAME_WIDTH  / 640.0f) + 0.5f);
-	draw_vertices[i].y = floorf(vertices[i].y * (PSP_FRAME_HEIGHT / 480.0f) + 0.5f);
-	draw_vertices[i].z = vertices[i].z;
+			draw_vertices[i].y = floorf(vertices[i].y * (PSP_FRAME_HEIGHT / 480.0f) + 0.5f);
+			draw_vertices[i].z = vertices[i].z;
 		}
 	}
 
@@ -642,6 +642,13 @@ void PSP_GUDraw5551(const uint16_t *texture, int width, int height,
 		1, PVR_FILTER_NONE, 0, GU_CLAMP, GU_CLAMP, 1);
 }
 
+void PSP_GUDrawPanoramicSky(const uint16_t *texture, int width, int height,
+		const pvr_vertex_t *vertices, int count)
+{
+	PSP_GUDraw5551Internal(texture, width, height, vertices, count, 1, 0,
+		1, PVR_FILTER_BILINEAR, 0, GU_REPEAT, GU_CLAMP, 1);
+}
+
 static int PSP_VertexAngleLess(const pvr_vertex_t *a, const pvr_vertex_t *b,
 		float center_x, float center_y)
 {
@@ -675,8 +682,7 @@ static const pvr_vertex_t *PSP_OrderWorldVertices(
 		return vertices;
 
 	for (int i = 0; i < count; i++) {
-		//float z = vertices[i].z > 0.0f ? vertices[i].z : 1.0f;
-		float z = vertices[i].z;
+		float z = vertices[i].z > 0.0f ? vertices[i].z : 1.0f;
 
 		ordered[i] = vertices[i];
 		center_x += vertices[i].x / z;
@@ -742,10 +748,10 @@ vertices = clipped;
 			&wall_header.context.txr.height);
 		context = &wall_header.context;
 		if (mirror_flags) {
-			float u_scale = ((float)wall_header.context.txr.width /
-				texture_width) * 0.25f;
-			float v_scale = ((float)wall_header.context.txr.height /
-				texture_height) * 0.25f;
+			float u_scale = (float)texture_width /
+				wall_header.context.txr.width;
+			float v_scale = (float)texture_height /
+				wall_header.context.txr.height;
 			for (int i = 0; i < count; i++) {
 				wall_vertices[i] = vertices[i];
 				wall_vertices[i].u *= u_scale;
