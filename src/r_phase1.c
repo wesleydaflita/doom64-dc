@@ -3,6 +3,16 @@
 #include "doomdef.h"
 #include "r_local.h"
 
+#ifdef __PSP__
+#define HORIZONTAL_FRUSTUM_TAN ((45 * FRACUNIT) / 34)
+#define HORIZONTAL_COLUMN_SCALE_NUM 34
+#define HORIZONTAL_COLUMN_SCALE_DEN 45
+#else
+#define HORIZONTAL_FRUSTUM_TAN FRACUNIT
+#define HORIZONTAL_COLUMN_SCALE_NUM 1
+#define HORIZONTAL_COLUMN_SCALE_DEN 1
+#endif
+
 static void R_LightTest(subsector_t *sub);
 
 int checkcoord[12][4] = { { 3, 0, 2, 1 }, /* Above,Left */
@@ -30,6 +40,15 @@ projectile_light_t __attribute__((aligned(32))) projectile_lights[NUM_DYNLIGHT];
 int lightidx = -1;
 
 mobj_t *rp1_rk, *rp1_bk, *rp1_yk;
+
+static int R_SlopeToSolidColumnOffset(fixed_t slope)
+{
+	fixed_t offset = slope >> XOYSCALE;
+
+	offset = (fixed_t)(((int64_t)offset * HORIZONTAL_COLUMN_SCALE_NUM) /
+		HORIZONTAL_COLUMN_SCALE_DEN);
+	return offset + (offset >> 2);
+}
 
 typedef enum {
 	gun_l,
@@ -607,10 +626,12 @@ static boolean R_CheckBBox(const fixed_t bspcoord[static 4])
 	vx2 = FixedMul(viewsin, x2 - viewx) - FixedMul(viewcos, y2 - viewy);
 	vy2 = FixedMul(viewcos, x2 - viewx) + FixedMul(viewsin, y2 - viewy);
 
-	if ((vx1 < -vy1) && (vx2 < -vy2))
+	if ((vx1 < -FixedMul(vy1, HORIZONTAL_FRUSTUM_TAN)) &&
+			(vx2 < -FixedMul(vy2, HORIZONTAL_FRUSTUM_TAN)))
 		return false;
 
-	if ((vy1 < vx1) && (vy2 < vx2))
+	if ((FixedMul(vy1, HORIZONTAL_FRUSTUM_TAN) < vx1) &&
+			(FixedMul(vy2, HORIZONTAL_FRUSTUM_TAN) < vx2))
 		return false;
 
 	if ((((vx2 >> FRACBITS) * (vy1 >> FRACBITS)) - ((vx1 >> FRACBITS) * (vy2 >> FRACBITS))) < 2)
@@ -620,21 +641,23 @@ static boolean R_CheckBBox(const fixed_t bspcoord[static 4])
 		return false;
 
 	// all FixedDivFloat were FixedDiv2 previously
-	if (vx1 < -vy1) {
-		delta = (vx1 + vy1);
-		delta = FixedDivFloat(delta, ((delta - vx2) - vy2));
+	if (vx1 < -FixedMul(vy1, HORIZONTAL_FRUSTUM_TAN)) {
+		fixed_t boundary1 = vx1 + FixedMul(vy1, HORIZONTAL_FRUSTUM_TAN);
+		fixed_t boundary2 = vx2 + FixedMul(vy2, HORIZONTAL_FRUSTUM_TAN);
+		delta = FixedDivFloat(boundary1, boundary1 - boundary2);
 		delta = FixedMul(delta, (vy2 - vy1));
 
 		vy1 += delta;
-		vx1 = -vy1;
+		vx1 = -FixedMul(vy1, HORIZONTAL_FRUSTUM_TAN);
 	}
 
-	if (vy2 < vx2) {
-		delta = (vx1 - vy1);
-		delta = FixedDivFloat(delta, ((delta - vx2) + vy2));
+	if (FixedMul(vy2, HORIZONTAL_FRUSTUM_TAN) < vx2) {
+		fixed_t boundary1 = vx1 - FixedMul(vy1, HORIZONTAL_FRUSTUM_TAN);
+		fixed_t boundary2 = vx2 - FixedMul(vy2, HORIZONTAL_FRUSTUM_TAN);
+		delta = FixedDivFloat(boundary1, boundary1 - boundary2);
 		delta = FixedMul(delta, (vy2 - vy1));
-		vx2 = delta + vy1;
-		vy2 = vx2;
+		vy2 += delta;
+		vx2 = FixedMul(vy2, HORIZONTAL_FRUSTUM_TAN);
 	}
 
 	// multiply by 320
@@ -646,11 +669,13 @@ static boolean R_CheckBBox(const fixed_t bspcoord[static 4])
 	// Xstart = ((FixedDiv2(vx1, vy1) * 160) >> 16) + 160;
 	// Xend = ((FixedDiv2(vx2, vy2) * 160) >> 16) + 160;
 
-	fixed_t vxovery1 = FixedDivFloat(vx1, vy1) >> XOYSCALE;
-	fixed_t vxovery2 = FixedDivFloat(vx2, vy2) >> XOYSCALE;
+	fixed_t vxovery1 = R_SlopeToSolidColumnOffset(
+		FixedDivFloat(vx1, vy1));
+	fixed_t vxovery2 = R_SlopeToSolidColumnOffset(
+		FixedDivFloat(vx2, vy2));
 
-	Xstart = ((vxovery1 + (vxovery1 >> 2))) + (SOLIDCOLSC >> 1);
-	Xend = ((vxovery2 + (vxovery2 >> 2))) + (SOLIDCOLSC >> 1);
+	Xstart = vxovery1 + (SOLIDCOLSC >> 1);
+	Xend = vxovery2 + (SOLIDCOLSC >> 1);
 
 	if (Xstart < 0)
 		Xstart = 0;
@@ -822,10 +847,12 @@ static void R_AddLine(seg_t *line)
 		y2 = vrt2->vy;
 	}
 
-	if ((x1 < -y1) && (x2 < -y2))
+	if ((x1 < -FixedMul(y1, HORIZONTAL_FRUSTUM_TAN)) &&
+			(x2 < -FixedMul(y2, HORIZONTAL_FRUSTUM_TAN)))
 		return;
 
-	if ((y1 < x1) && (y2 < x2))
+	if ((FixedMul(y1, HORIZONTAL_FRUSTUM_TAN) < x1) &&
+			(FixedMul(y2, HORIZONTAL_FRUSTUM_TAN) < x2))
 		return;
 
 	if ((y1 < (FRACUNITx8 + 1)) && (y2 < (FRACUNITx8 + 1)))
@@ -847,6 +874,22 @@ static void R_AddLine(seg_t *line)
 		y2 = FRACUNITx8;
 	}
 
+	if (x1 < -FixedMul(y1, HORIZONTAL_FRUSTUM_TAN)) {
+		fixed_t boundary1 = x1 + FixedMul(y1, HORIZONTAL_FRUSTUM_TAN);
+		fixed_t boundary2 = x2 + FixedMul(y2, HORIZONTAL_FRUSTUM_TAN);
+		delta = FixedDivFloat(boundary1, boundary1 - boundary2);
+		delta = FixedMul(delta, (y2 - y1));
+		y1 += delta;
+		x1 = -FixedMul(y1, HORIZONTAL_FRUSTUM_TAN);
+	} else if (FixedMul(y2, HORIZONTAL_FRUSTUM_TAN) < x2) {
+		fixed_t boundary1 = x1 - FixedMul(y1, HORIZONTAL_FRUSTUM_TAN);
+		fixed_t boundary2 = x2 - FixedMul(y2, HORIZONTAL_FRUSTUM_TAN);
+		delta = FixedDivFloat(boundary1, boundary1 - boundary2);
+		delta = FixedMul(delta, (y2 - y1));
+		y2 += delta;
+		x2 = FixedMul(y2, HORIZONTAL_FRUSTUM_TAN);
+	}
+
 	// multiply by 320
 	// is (x*256) + (x*64)
 	// (x << 8) + (x << 6)
@@ -856,11 +899,13 @@ static void R_AddLine(seg_t *line)
 	// Xstart = ((FixedDiv2(x1, y1) * 160) >> 16) + 160;
 	// Xend  = ((FixedDiv2(x2, y2) * 160) >> 16) + 160;
 
-	fixed_t xovery1 = FixedDivFloat(x1, y1) >> XOYSCALE;
-	fixed_t xovery2 = FixedDivFloat(x2, y2) >> XOYSCALE;
+	fixed_t xovery1 = R_SlopeToSolidColumnOffset(
+		FixedDivFloat(x1, y1));
+	fixed_t xovery2 = R_SlopeToSolidColumnOffset(
+		FixedDivFloat(x2, y2));
 
-	Xstart = ((xovery1 + (xovery1 >> 2))) + (SOLIDCOLSC >> 1) - 1;
-	Xend = ((xovery2 + (xovery2 >> 2))) + (SOLIDCOLSC >> 1) + 1;
+	Xstart = xovery1 + (SOLIDCOLSC >> 1) - 1;
+	Xend = xovery2 + (SOLIDCOLSC >> 1) + 1;
 
 	if (Xstart < 0)
 		Xstart = 0;

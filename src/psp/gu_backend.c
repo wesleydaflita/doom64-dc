@@ -11,8 +11,15 @@
 #define PSP_BUFFER_WIDTH 512
 #define PSP_GU_LIST_SIZE (512 * 1024)
 #define NEAR_Z 8.0f
-#define GUARD_K  1.25f
 #define MAX_POLY 16
+#define PSP_SCALE      (PSP_FRAME_HEIGHT / 480.0f)
+#define PSP_X_OFFSET   ((PSP_FRAME_WIDTH - 640.0f * PSP_SCALE) * 0.5f)
+#define PSP_X_PROJ     1.0f
+#define GUARD_K  1.25f
+#define GUARD_KX   (GUARD_K / PSP_X_PROJ)
+
+static inline float PSP_ScreenX(float x) { return x * PSP_SCALE + PSP_X_OFFSET; }
+static inline float PSP_ScreenY(float y) { return y * PSP_SCALE; }
 
 static unsigned int __attribute__((aligned(16))) gu_list[PSP_GU_LIST_SIZE];
 extern void __I_Error(const char *funcname, char *error, ...);
@@ -242,10 +249,10 @@ static int PSP_ClipFrustum(const pvr_vertex_t *in, int n, pvr_vertex_t *out)
 	int m;
 
 	m = PSP_ClipPlane(in,  n, tmp, 0,  0, 1, -NEAR_Z);   if (m < 3) return 0;
-	n = PSP_ClipPlane(tmp, m, out,  1,  0, GUARD_K, 0);  if (n < 3) return 0;
-	m = PSP_ClipPlane(out, n, tmp, -1,  0, GUARD_K, 0);  if (m < 3) return 0;
-	n = PSP_ClipPlane(tmp, m, out,  0,  1, GUARD_K, 0);  if (n < 3) return 0;
-	m = PSP_ClipPlane(out, n, tmp,  0, -1, GUARD_K, 0);  if (m < 3) return 0;
+	n = PSP_ClipPlane(tmp, m, out,  1,  0, GUARD_KX, 0);  if (n < 3) return 0;
+	m = PSP_ClipPlane(out, n, tmp, -1,  0, GUARD_KX, 0);  if (m < 3) return 0;
+	n = PSP_ClipPlane(tmp, m, out,  0,  1, GUARD_K,  0);  if (n < 3) return 0;
+	m = PSP_ClipPlane(out, n, tmp,  0, -1, GUARD_K,  0);  if (m < 3) return 0;
 	memcpy(out, tmp, m * sizeof(*out));
 	return m;
 }
@@ -325,7 +332,7 @@ int PSP_GUInit(void)
 		.w = {0.0f, 0.0f, 0.0f, 1.0f}
 	};
 	const ScePspFMatrix4 world_projection = {
-		.x = {1.0f, 0.0f, 0.0f, 0.0f},
+		.x = {PSP_X_PROJ, 0.0f, 0.0f, 0.0f},
 		.y = {0.0f, 1.0f, 0.0f, 0.0f},
 		.z = {0.0f, 0.0f, depth_scale, 1.0f},
 		.w = {0.0f, 0.0f, depth_offset, 0.0f}
@@ -495,8 +502,8 @@ static void PSP_GUDrawIndexedInternal(const uint8_t *texture, int width,
 			draw_vertices[i].y = vertices[i].y;
 			draw_vertices[i].z = vertices[i].z;
 		} else {
-			draw_vertices[i].x = floorf(vertices[i].x * (PSP_FRAME_WIDTH  / 640.0f) + 0.5f);
-			draw_vertices[i].y = floorf(vertices[i].y * (PSP_FRAME_HEIGHT / 480.0f) + 0.5f);
+			draw_vertices[i].x = floorf(PSP_ScreenX(vertices[i].x) + 0.5f);
+			draw_vertices[i].y = floorf(PSP_ScreenY(vertices[i].y) + 0.5f);
 			draw_vertices[i].z = vertices[i].z;
 		}
 	}
@@ -586,10 +593,8 @@ static void PSP_GUDraw5551Internal(const uint16_t *texture, int width,
 			draw_vertices[i].y = vertices[i].y;
 			draw_vertices[i].z = vertices[i].z;
 		} else {
-			draw_vertices[i].x =
-				vertices[i].x * (PSP_FRAME_WIDTH / 640.0f);
-			draw_vertices[i].y =
-				vertices[i].y * (PSP_FRAME_HEIGHT / 480.0f);
+			draw_vertices[i].x = floorf(PSP_ScreenX(vertices[i].x) + 0.5f);
+			draw_vertices[i].y = floorf(PSP_ScreenY(vertices[i].y) + 0.5f);
 			draw_vertices[i].z = vertices[i].z;
 		}
 	}

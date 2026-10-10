@@ -75,7 +75,14 @@ void R_Init(void)
 {
 	R_InitData();
 
-	R_Frustum(R_ProjectionMatrix, -8.0f, 8.0f, -6.0f, 6.0f, 8.0f, 3808.0f, 1.0f);
+#ifdef __PSP__
+	const float half_width = 6.0f * (480.0f / 272.0f);
+	R_Frustum(R_ProjectionMatrix, -half_width, half_width,
+		-6.0f, 6.0f, 8.0f, 3808.0f, 1.0f);
+#else
+	R_Frustum(R_ProjectionMatrix, -8.0f, 8.0f, -6.0f, 6.0f,
+		8.0f, 3808.0f, 1.0f);
+#endif
 
 	R_Ident(R_ModelMatrix);
 
