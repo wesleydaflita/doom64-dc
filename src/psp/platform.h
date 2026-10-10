@@ -68,6 +68,7 @@ typedef struct { uint32_t unused; } pvr_dr_state_t;
 typedef struct { uint32_t unused; } pvr_init_params_t;
 typedef struct { char name[256]; uint32_t size; } dirent_t;
 
+void PSP_GUSetFog(float start, float end, uint32_t abgr);
 void PSP_GUDrawFlat(const pvr_vertex_t *vertices, int count);
 void PSP_GUDrawWorldPoly(const pvr_poly_hdr_t *header,
 	const pvr_vertex_t *vertices, int count);

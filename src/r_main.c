@@ -166,7 +166,8 @@ void R_RenderPlayerView(void)
 	// Phase 1
 	R_BSP();
 
-	// Phase 2
+	// Phase 2 (sky is not fogged)
+	PSP_GUSetFog(0.0f, 0.0f, 0);
 	if (rendersky && R_RenderSKY)
 		R_RenderSKY();
 
@@ -179,6 +180,9 @@ void R_RenderPlayerView(void)
 #if FOG_VERTEX
 	vertfog_color(1.0f, (float)UNPACK_R(FogColor) / 255.0f, (float)UNPACK_G(FogColor) / 255.0f, (float)UNPACK_B(FogColor) / 255.0f);
 #endif
+
+	PSP_GUSetFog(d64_fog_start, d64_fog_end,
+		0xff000000 | (UNPACK_B(FogColor) << 16) | (UNPACK_G(FogColor) << 8) | UNPACK_R(FogColor));
 
 	R_RotateX(R_RotX, (float)finesine[pitch] * recip64k, (float)finecosine[pitch] * recip64k);
 

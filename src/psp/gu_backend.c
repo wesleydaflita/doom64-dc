@@ -407,6 +407,27 @@ void PSP_GUSetPaletteEntry(int index, uint16_t color)
 		gu_palette[index] = color;
 }
 
+static int gu_fog_active;
+
+void PSP_GUSetFog(float start, float end, uint32_t abgr)
+{
+	start = start * 0.01f;
+	end = end * 0.5f;
+	gu_fog_active = end > start;
+	if (gu_fog_active)
+		/* the GE computes fog from eye-space z, which is negative in front of
+		 * the camera; our depth is positive, so negate the range */
+		sceGuFog(-start, -end, abgr);
+}
+
+static void PSP_GUApplyFog(int transform_3d)
+{
+	if (transform_3d && gu_fog_active)
+		sceGuEnable(GU_FOG);
+	else
+		sceGuDisable(GU_FOG);
+}
+
 static void PSP_GUDrawFlatInternal(const pvr_vertex_t *vertices, int count,
 		int transform_3d, int blend_state, int triangle_strip)
 {
@@ -442,6 +463,7 @@ static void PSP_GUDrawFlatInternal(const pvr_vertex_t *vertices, int count,
 		sceGuDisable(GU_DEPTH_TEST);
 		sceGuDepthMask(GU_FALSE);
 	}
+	PSP_GUApplyFog(transform_3d);
 	sceGuDisable(GU_TEXTURE_2D);
 	sceGuDisable(GU_ALPHA_TEST);
 	if (blend_state < 0) {
@@ -525,6 +547,7 @@ static void PSP_GUDrawIndexedInternal(const uint8_t *texture, int width,
 	sceGuTexFilter(filter == PVR_FILTER_BILINEAR ? GU_LINEAR : GU_NEAREST,
 		filter == PVR_FILTER_BILINEAR ? GU_LINEAR : GU_NEAREST);
 	sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
+	PSP_GUApplyFog(transform_3d);
 	sceGuEnable(GU_TEXTURE_2D);
 	if (alpha_test) {
 		sceGuAlphaFunc(GU_GREATER, 0, 0xff);
@@ -613,6 +636,7 @@ static void PSP_GUDraw5551Internal(const uint16_t *texture, int width,
 	sceGuTexFilter(filter == PVR_FILTER_BILINEAR ? GU_LINEAR : GU_NEAREST,
 		filter == PVR_FILTER_BILINEAR ? GU_LINEAR : GU_NEAREST);
 	sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
+	PSP_GUApplyFog(transform_3d);
 	sceGuEnable(GU_TEXTURE_2D);
 	if (alpha_test) {
 		sceGuAlphaFunc(GU_GREATER, 0, 0xff);
