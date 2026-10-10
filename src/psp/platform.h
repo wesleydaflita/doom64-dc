@@ -77,6 +77,9 @@ void PSP_GUDraw5551(const uint16_t *texture, int width, int height,
 	const pvr_vertex_t *vertices, int count);
 void PSP_GUDrawPanoramicSky(const uint16_t *texture, int width, int height,
 	const pvr_vertex_t *vertices, int count);
+void PSP_GUDrawSkyTexture(const uint16_t *texture, int width, int height,
+	const pvr_vertex_t *vertices, int count, int wrap_s, int wrap_t,
+	int translucent);
 void PSP_GUSetPaletteEntry(int index, uint16_t color);
 void PSP_GUDrawIndexed(const uint8_t *texture, int width, int height,
 	int palette, const pvr_vertex_t *vertices, int count);

@@ -654,6 +654,14 @@ void PSP_GUDrawPanoramicSky(const uint16_t *texture, int width, int height,
 		1, PVR_FILTER_BILINEAR, 0, GU_REPEAT, GU_CLAMP, 1);
 }
 
+void PSP_GUDrawSkyTexture(const uint16_t *texture, int width, int height,
+		const pvr_vertex_t *vertices, int count, int wrap_s, int wrap_t,
+		int translucent)
+{
+	PSP_GUDraw5551Internal(texture, width, height, vertices, count, 0,
+		translucent, 0, PVR_FILTER_BILINEAR, 1, wrap_s, wrap_t, 1);
+}
+
 static int PSP_VertexAngleLess(const pvr_vertex_t *a, const pvr_vertex_t *b,
 		float center_x, float center_y)
 {
