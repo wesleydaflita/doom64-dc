@@ -1335,7 +1335,11 @@ typedef struct {
 	int cursor_pos;
 } menudata_t;
 
+#ifdef __PSP__
+#define NUM_MENU_GAME 6
+#else
 #define NUM_MENU_GAME 7
+#endif
 extern menudata_t MenuData[8]; // 800A54F0
 extern menuitem_t Menu_Game[NUM_MENU_GAME]; // 8005AAA4
 extern int MenuAnimationTic; // 800a5570

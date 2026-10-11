@@ -168,7 +168,18 @@ void D_DoomMain(void)
 	// refresh brightness after setting
 	P_RefreshBrightness();
 
+#ifdef __PSP__
+	// the intro title map doesn't render on PSP: go straight to the start menu
+	boolean skip_intro = true;
+#endif
+
 	while (true) {
+#ifdef __PSP__
+		if (skip_intro) {
+			skip_intro = false;
+			exit = ga_exit;
+		} else
+#endif
 		exit = D_TitleMap();
 
 		if (exit != ga_exit) {

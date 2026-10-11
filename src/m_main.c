@@ -279,13 +279,24 @@ menuitem_t Menu_StatusHUD[NUM_MENU_STATUSHUD] =
 
 menuitem_t Menu_Game[NUM_MENU_GAME] =
 	{
+#ifndef __PSP__
 		{ 3, 122, 60 }, // Password
+#endif
+#ifdef __PSP__
+		{ 102, 122, 60 }, // Save Game
+		{ 103, 122, 80 }, // Load Game
+		{ 11, 122, 100 }, // Options
+		{ 4, 122, 120 }, // Main Menu
+		{ 5, 122, 140 }, // Restart Level
+		{ 22, 122, 160 }, // Features
+#else
 		{ 102, 122, 80 }, // Save Game
 		{ 103, 122, 100 }, // Load Game
 		{ 11, 122, 120 }, // Options
 		{ 4, 122, 140 }, // Main Menu
 		{ 5, 122, 160 }, // Restart Level
 		{ 22, 122, 180 }, // Features
+#endif
 	};
 
 #define NUM_MENU_QUIT 2
@@ -904,8 +915,13 @@ int M_MenuTicker(void)
 					M_EncodePassword(Passwordbuff);
 					M_SaveMenuData();
 					MenuCall = M_SavePakDrawer;
+#ifdef __PSP__
+					MiniLoop(M_SavePakStart, M_SavePakStop, M_SavePakTicker,
+						M_MenuGameDrawer);
+#else
 					MiniLoop(M_SavePakStart, M_SavePakStop, M_SavePakTicker,
 						M_SavePakDrawer);
+#endif
 					M_RestoreMenuData(true);
 					nextmap = saved_nextmap;
 					memcpy(Passwordbuff, saved_password, sizeof(saved_password));
@@ -2328,12 +2344,15 @@ void M_SavePakStart(void)
 	} else {
 		FilesUsed = -1;
 	}
+
+	M_FadeInStart();
 }
 
 void M_SavePakStop(int exit)
 {
 	(void)exit;
 	S_StartSound(NULL, sfx_pistol);
+	M_FadeOutStart(ga_exit);
 	if (Pak_Data) {
 		Z_Free(Pak_Data);
 		Pak_Data = NULL;
@@ -2454,13 +2473,13 @@ void M_SavePakDrawer(void)
 {
 	int i;
 
-	I_ClearFrame();
 #ifndef __PSP__
+	I_ClearFrame();
 	// Fill borders with black
 	pvr_set_bg_color(0, 0, 0);
 	pvr_fog_table_color(0.0f, 0.0f, 0.0f, 0.0f);
-#endif
 	M_DrawBackground(EVIL, 128);
+#endif
 
 #ifdef __PSP__
 	ST_DrawString(-1, 20, "Save Game", text_alpha | 0xc0000000, ST_ABOVE_OVL);
@@ -2468,7 +2487,7 @@ void M_SavePakDrawer(void)
 	ST_DrawString(-1, 20, "VMU", text_alpha | 0xc0000000, ST_ABOVE_OVL);
 #endif
 
-	if (FilesUsed == -1) {
+	if (FilesUsed == -1 || !Pak_Data) {
 		if (MenuAnimationTic & 2) {
 #ifdef __PSP__
 			ST_DrawString(-1, 100, "Save storage unavailable",
@@ -2505,7 +2524,9 @@ void M_SavePakDrawer(void)
 		ST_DrawString(-1, 210, "press \x8c to save", text_alpha | 0xffffff00, ST_ABOVE_OVL);
 	}
 
+#ifndef __PSP__
 	I_DrawFrame();
+#endif
 }
 
 void M_LoadPakStart(void)
