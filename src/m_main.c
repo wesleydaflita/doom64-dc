@@ -489,6 +489,11 @@ int M_RunTitle(void)
 	if (exit == ga_timeout)
 		return ga_timeout;
 
+	// don't let stale menu state leak into the game / intro screens
+	MenuCall = NULL;
+	MenuIdx = 0;
+	gamepaused = false;
+
 	G_InitNew(startskill, startmap, (gametype_t)ga_nothing);
 	G_RunGame();
 

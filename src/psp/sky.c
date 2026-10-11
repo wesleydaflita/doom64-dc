@@ -14,6 +14,7 @@ typedef struct {
 	int lump;
 	int width;
 	int height;
+	int real_height;
 	uint16_t *texture;
 } sky_image_t;
 
@@ -49,6 +50,7 @@ static void PSP_LoadSkyImage(sky_image_t *image, int lump,
 	uint16_t *texture;
 	int width;
 	int height;
+	int padded_height;
 
 	if (image->texture && image->lump == lump)
 		return;
@@ -63,21 +65,32 @@ static void PSP_LoadSkyImage(sky_image_t *image, int lump,
 	header = (spriteN64_t *)data;
 	width = (SwapShort(header->width) + 7) & ~7;
 	height = SwapShort(header->height);
-	if (width < 2 || height < 2 || width > 512 || height > 512 ||
-			(width & (width - 1)) || (height & (height - 1)))
+	padded_height = 1;
+	while (padded_height < height)
+		padded_height <<= 1;
+	if (width < 2 || height < 2 || width > 512 || padded_height > 512 ||
+			(width & (width - 1)))
 		I_Error("Invalid sky dimensions %d x %d", width, height);
 
 	source = data + sizeof(*header);
-	pixels = malloc((size_t)width * height);
-	texture = PSP_GUAllocTexture((size_t)width * height * sizeof(*texture));
+	pixels = calloc((size_t)width * padded_height, 1);
+	texture = PSP_GUAllocTexture((size_t)width * padded_height *
+		sizeof(*texture));
 	if (!pixels || !texture) {
 		free(pixels);
 		PSP_GUFreeTexture(texture);
 		I_Error("Could not allocate sky texture");
 	}
 
-	if (PSP_GUUntwiddle8(source, pixels, width, height))
-		I_Error("Could not untwiddle sky texture");
+	// N64 layout: linear rows, with the two dwords of every 8 bytes
+	// swapped on odd rows
+	for (int y = 0; y < height; y++) {
+		const uint8_t *row = source + (size_t)y * width;
+		uint8_t *out = pixels + (size_t)y * width;
+
+		for (int x = 0; x < width; x++)
+			out[x] = (y & 1) ? row[x ^ 4] : row[x];
+	}
 
 	source += (size_t)width * height;
 	for (int i = 0; i < 256; i++) {
@@ -89,16 +102,18 @@ static void PSP_LoadSkyImage(sky_image_t *image, int lump,
 		palette[i] = get_color_argb1555(red, green, blue,
 			!transparent_zero || i != 0);
 	}
-	for (size_t i = 0; i < (size_t)width * height; i++)
-		texture[i] = palette[pixels[i]];
+	for (size_t i = 0; i < (size_t)width * padded_height; i++)
+		texture[i] = (i < (size_t)width * height) ?
+			palette[pixels[i]] : 0;
 
 	free(pixels);
 	Z_Free(data);
 	sceKernelDcacheWritebackInvalidateRange(texture,
-		(size_t)width * height * sizeof(*texture));
+		(size_t)width * padded_height * sizeof(*texture));
 	image->lump = lump;
 	image->width = width;
-	image->height = height;
+	image->height = padded_height;
+	image->real_height = height;
 	image->texture = texture;
 }
 
@@ -328,8 +343,8 @@ static void R_RenderPSPSky(void)
 		sky_image_t *space = PSP_GetSkyImage("SPACE", 0);
 		if (active_sky != 7 || Skyfadeback < 255) {
 			PSP_DrawSkyRect(space->texture, space->width, space->height,
-				0.0f, 128.0f, -angle, 1.0f - angle,
-				0.0f, 1.0f, 0xffffffff, GU_REPEAT, GU_CLAMP, 0);
+				(128.0f - space->real_height) * 2.0f, 256.0f, -angle, 1.0f - angle,
+				0.0f, (float)space->real_height / space->height, 0xffffffff, GU_REPEAT, GU_CLAMP, 0);
 		}
 	}
 
@@ -339,8 +354,9 @@ static void R_RenderPSPSky(void)
 		sky_image_t *mountain = PSP_GetSkyImage(mountain_name, 1);
 
 		PSP_DrawSkyRect(mountain->texture, mountain->width,
-			mountain->height, 106.0f, 170.0f, -angle,
-			1.0f - angle, 0.0f, 1.0f, 0xffffffff, GU_REPEAT, GU_CLAMP, 1);
+			mountain->height, (170.0f - mountain->real_height) * 2.0f, 340.0f,
+			-angle, 1.0f - angle, 0.0f,
+			(float)mountain->real_height / mountain->height, 0xffffffff, GU_REPEAT, GU_CLAMP, 1);
 	}
 
 	if (logo_alpha)
